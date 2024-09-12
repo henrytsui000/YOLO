@@ -1,0 +1,707 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="description"
+        content="YOLOv9: Learning What You Want to Learn Using Programmable Gradient Information.">
+  <meta name="keywords" content="Yolo, Detection, Real-Time Object Detection">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>YOLOv9: Learning What You Want to Learn Using Programmable Gradient Information</title>
+
+  <!-- Global site tag (gtag.js) - Google Analytics -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-PYVRSFMDRL"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+
+    function gtag() {
+      dataLayer.push(arguments);
+    }
+
+    gtag('js', new Date());
+
+    gtag('config', 'G-PYVRSFMDRL');
+  </script>
+
+  <link href="https://fonts.googleapis.com/css?family=Google+Sans|Noto+Sans|Castoro"
+        rel="stylesheet">
+
+  <link rel="stylesheet" href="./static/css/bulma.min.css">
+  <link rel="stylesheet" href="./static/css/bulma-carousel.min.css">
+  <link rel="stylesheet" href="./static/css/bulma-slider.min.css">
+  <link rel="stylesheet" href="./static/css/fontawesome.all.min.css">
+  <link rel="stylesheet"
+        href="https://cdn.jsdelivr.net/gh/jpswalsh/academicons@1/css/academicons.min.css">
+  <link rel="stylesheet" href="./static/css/index.css">
+  <link rel="icon" href="./static/images/iislogo.png">
+
+  <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+  <script defer src="./static/js/fontawesome.all.min.js"></script>
+  <script src="./static/js/bulma-carousel.min.js"></script>
+  <script src="./static/js/bulma-slider.min.js"></script>
+  <script src="./static/js/index.js"></script>
+</head>
+<body>
+
+<nav class="navbar" role="navigation" aria-label="main navigation">
+  <div class="navbar-brand">
+    <a role="button" class="navbar-burger" aria-label="menu" aria-expanded="false">
+      <span aria-hidden="true"></span>
+      <span aria-hidden="true"></span>
+      <span aria-hidden="true"></span>
+    </a>
+  </div>
+  <div class="navbar-menu">
+    <div class="navbar-start" style="flex-grow: 1; justify-content: center;">
+      <a class="navbar-item" href="https://keunhong.com">
+      <span class="icon">
+          <i class="fas fa-home"></i>
+      </span>
+      </a>
+
+      <div class="navbar-item has-dropdown is-hoverable">
+        <a class="navbar-link">
+          More Research
+        </a>
+        <div class="navbar-dropdown">
+          <a class="navbar-item" href="https://github.com/WongKinYiu/PyTorch_YOLOv4">
+            YOLOv4
+          </a>
+          <a class="navbar-item" href="https://github.com/WongKinYiu/yolor">
+            YOLO-R
+          </a>
+          <a class="navbar-item" href="https://github.com/WongKinYiu/yolov7">
+            YOLOv7
+          </a>
+          <a class="navbar-item" href="https://photoshape.github.io">
+            YOLO-RD
+          </a>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</nav>
+
+
+<section class="hero">
+  <div class="hero-body">
+    <div class="container is-max-desktop">
+      <div class="columns is-centered">
+        <div class="column has-text-centered">
+          <h1 class="title is-1 publication-title">[ECCV 2024] YOLOv9: Learning What You Want to Learn Using Programmable Gradient Information</h1>
+          <div class="is-size-5 publication-authors">
+            <span class="author-block">
+              <a href="https://homepage.iis.sinica.edu.tw/pages/kinyiu/index_en.html">Chien-Yao Wang</a><sup>1</sup>,</span>
+            <span class="author-block">
+              <a href="https://ieeexplore.ieee.org/author/37089501373">I-Hau Yeh</a><sup></sup>,</span>
+            <span class="author-block">
+              <a href="https://homepage.iis.sinica.edu.tw/pages/liao/index_en.html">Hong-Yuan Mark Liao</a><sup>1</sup>,
+            </span>
+          </div>
+
+          <div class="is-size-5 publication-authors">
+            <span class="author-block"><sup>1</sup>Institute of Information Science, Academia Sinica, Taiwan</span>
+          </div>
+
+          <div class="column has-text-centered">
+            <div class="publication-links">
+              <!-- PDF Link. -->
+              <span class="link-block">
+                <a href="https://arxiv.org/pdf/2402.13616"
+                   class="external-link button is-normal is-rounded is-dark">
+                  <span class="icon">
+                      <i class="fas fa-file-pdf"></i>
+                  </span>
+                  <span>Paper</span>
+                </a>
+              </span>
+              <span class="link-block">
+                <a href="https://arxiv.org/abs/2402.13616"
+                   class="external-link button is-normal is-rounded is-dark">
+                  <span class="icon">
+                      <i class="ai ai-arxiv"></i>
+                  </span>
+                  <span>arXiv</span>
+                </a>
+              </span>
+              <!-- Video Link. -->
+              <span class="link-block">
+                <a href="https://www.youtube.com/watch?v=gu9aaVqgiDY"
+                   class="external-link button is-normal is-rounded is-dark">
+                  <span class="icon">
+                      <i class="fab fa-youtube"></i>
+                  </span>
+                  <span>Video</span>
+                </a>
+              </span>
+              <!-- Code Link. -->
+              <span class="link-block">
+                <a href="https://github.com/WongKinYiu/YOLO"
+                   class="external-link button is-normal is-rounded is-dark">
+                  <span class="icon">
+                      <i class="fab fa-github"></i>
+                  </span>
+                  <span>GitHub 1</span>
+                  </a>
+              </span>
+              <!-- Code Link. -->
+              <span class="link-block">
+                <a href="https://github.com/WongKinYiu/yolov9"
+                   class="external-link button is-normal is-rounded is-dark">
+                  <span class="icon">
+                      <i class="fab fa-github"></i>
+                  </span>
+                  <span>GitHub 2</span>
+                  </a>
+              </span>
+              <!-- Dataset Link. -->
+              <span class="link-block">
+                <a href="https://github.com/WongKinYiu/yolov9/releases"
+                   class="external-link button is-normal is-rounded is-dark">
+                  <span class="icon">
+                    <i class="far fa-images"></i>
+                  </span>
+                  <span>Model</span>
+                </a>
+              </span>
+                <!-- Dataset Link. -->
+                <span class="link-block">
+                  <a href="https://huggingface.co/spaces/henry000/YOLO"
+                     class="external-link button is-normal is-rounded is-dark">
+                    <span class="icon">
+                        <i class="far fa-images"></i>
+                    </span>
+                    <span>Demo</span>
+                  </a>
+                </span>
+            </div>
+            <div class="is-size-5 publication-authors">
+              <span class="author-block">
+                ECCV Poster Presenter:<a href="https://github.com/henrytsui000"> Hao-Tang Tsui</a><sup>1</sup></span>
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="hero teaser">
+  <div class="container is-max-desktop">
+    <div class="hero-body">
+      <img src="./static/images/Compare.png"
+      class="interpolation-image"
+      alt="Interpolate start reference image."/>
+
+      <h2 class="subtitle has-text-centered">
+        <span class="dnerf">YOLOv9</span>, the current State-Of-The-Art real-time object detection model.
+      </h2>
+    </div>
+  </div>
+</section>
+
+
+<section class="hero is-light">
+  <div class="hero-body">
+  <div class="container is-max-desktop">
+    <!-- Abstract. -->
+    <div class="columns is-centered has-text-centered">
+      <div class="column is-four-fifths">
+        <h2 class="title is-2">🧾 Abstract</h2>
+        <div class="content has-text-justified">
+          <p>
+            Today’s deep learning methods focus on how to design the objective functions to make the prediction as close as possible to the target. 
+            Meanwhile, an appropriate neural network architecture has to be designed. 
+            Existing methods ignore a fact that when input data undergoes layer-by-layer feature transformation, large amount of information will be lost. 
+          </p>
+          <p>
+            This paper delve into the important issues of information bottle- neck and reversible functions. We proposed the concept of programmable gradient information (PGI) to cope with the various changes required by deep networks to achieve multiple objectives. 
+            PGI can provide complete input information for the target task to calculate objective function, so that reliable gradient information can be obtained to update network parameters. In addition, a lightweight network architecture – General- ized Efficient Layer Aggregation Network (GELAN) is designed. 
+            GELAN confirms that PGI has gained superior results on lightweight models. We verified the proposed GELAN and PGI on MS COCO object detection dataset. 
+          </p>
+          <p>
+            The results show that GELAN only uses conventional convolution operators to achieve better parameter utilization than the state-of-the-art methods developed based on depth-wise convolution. 
+            PGI can be used for variety of models from lightweight to large. It can be used to obtain complete information, so that train-from-scratch models can achieve better results than state-of-the-art models pre-trained using large datasets, the comparison results are shown in Figure above. 
+          </p>
+        </div>
+      </div>
+    </div>
+    </div>
+    <!--/ Abstract. -->
+
+    <!-- Paper video. -->
+    <div class="columns is-centered has-text-centered">
+      <div class="column is-four-fifths">
+        <h2 class="title is-2">🎥 Video</h2>
+        <div class="publication-video">
+          <iframe src="https://www.youtube.com/embed/gu9aaVqgiDY?rel=0&amp;showinfo=0"
+                  frameborder="0" allow="autoplay; encrypted-media" allowfullscreen></iframe>
+        </div>
+      </div>
+    </div>
+    <!--/ Paper video. -->
+  </div>
+</section>
+
+
+<section class="section">
+  <div class="container is-max-desktop">
+
+    <h2 class="title is-2 has-text-centered">🔬 Method</h2>
+    <div class="columns is-centered">
+
+      <!-- Visual Effects. -->
+      <div class="column">
+        <div class="content">
+          <h2 class="title is-3">PGI</h2>
+          <p>
+            PGI combines Reversible Branches and Deep Supervision to provide accurate gradients. 
+            It introduces auxiliary branches that shorten paths or reuse inputs, improving information retention and gradient precision. 
+            Unlike traditional Deep Supervision, PGI works with small models and allows removable branches during inference, enhancing speed without sacrificing performance.
+          </p>
+          
+          <img src="./static/images/PGI.png"
+          class="interpolation-image"
+          alt="Interpolate start reference image."/>
+
+        </div>
+      </div>
+      <!--/ Visual Effects. -->
+
+      <!-- Matting. -->
+      <div class="column">
+        <h2 class="title is-3">GELAN</h2>
+        <div class="columns is-centered">
+          <div class="column content">
+            <p>
+              GELAN, the Generalized Efficient Layer Aggregation Network, reduces data loss by combining CSPNet and ELAN. 
+              CSPNet splits and merges features, while ELAN aggregates information across layers. We generalize ELAN to use any network block, and here we use CSPNet. 
+              Unlike ResNet, GELAN maintains data quality even beyond 100 layers, easing the model's learning effort.
+            </p>
+            <img src="./static/images/GELAN.png"
+            class="interpolation-image"
+            alt="Interpolate start reference image."/>
+          </div>
+
+        </div>
+      </div>
+    </div>
+    <!--/ Matting. -->
+
+    <!-- Animation. -->
+    <div class="columns is-centered">
+      <div class="column is-full-width">
+        <h2 class="title is-2 has-text-centered">📺 Demo</h2>
+        <h3 class="title is-4">Real-Time Demo</h3>
+
+      <script type="module" src="https://gradio.s3-us-west-2.amazonaws.com/4.36.1/gradio.js"></script>
+      
+      <gradio-app src="https://henry000-yolo.hf.space"></gradio-app>
+
+        <!-- Re-rendering. -->
+        <h3 class="title is-4">Multi-Tasking</h3>
+        <div class="content has-text-justified">
+          <p>
+            Beyond object detection, the backbone built with GELAN and <span class="dnerf">PGI</span> provides overall improvements across real-time multitasks, including object detection, instance segmentation, and panoptic segmentation.
+          </p>
+        </div>
+        <div class="content has-text-centered">
+          
+          <img src="./static/images/Multi-Task.png"
+      class="interpolation-image"
+      alt="Interpolate start reference image."/>
+        </div>
+        <!--/ Re-rendering. -->
+      </div>
+    </div>
+    <!--/ Animation. -->
+
+    <!-- Animation. -->
+    <div class="columns is-centered">
+      <div class="column is-full-width">
+        <h2 class="title is-2 has-text-centered">🧪 Expriments</h2>
+        <h3 class="title is-4">Comparison of SOTA Detectors</h3>
+
+        <table class="table">
+          <thead>
+            <tr>
+              <th>MODEL</th>
+              <th>Param. (M)</th>
+              <th>FLOPs (G)</th>
+              <th>AP<sup>val</sup> (%)</th>
+              <th>AP<sub>50</sub><sup>val</sup> (%)</th>
+              <th>AP<sub>75</sub><sup>val</sup> (%)</th>
+              <th>AP<sub>S</sub><sup>val</sup> (%)</th>
+              <th>AP<sub>M</sub><sup>val</sup> (%)</th>
+              <th>AP<sub>L</sub><sup>val</sup> (%)</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>YOLOv7-N AF</td>
+              <td>3.1</td>
+              <td>8.7</td>
+              <td>37.6</td>
+              <td>53.3</td>
+              <td>40.6</td>
+              <td>18.7</td>
+              <td>41.7</td>
+              <td>52.8</td>
+            </tr>
+            <tr>
+              <td>YOLOv7-S AF</td>
+              <td>11</td>
+              <td>28.1</td>
+              <td>45.1</td>
+              <td>61.8</td>
+              <td>48.9</td>
+              <td>25.7</td>
+              <td>50.2</td>
+              <td>61.2</td>
+            </tr>
+            <tr>
+              <td>YOLOv7</td>
+              <td>36.9</td>
+              <td>104.7</td>
+              <td>51.2</td>
+              <td>69.7</td>
+              <td>55.9</td>
+              <td>31.8</td>
+              <td>55.5</td>
+              <td>65.0</td>
+            </tr>
+            <tr>
+              <td>YOLOv7 AF</td>
+              <td>43.6</td>
+              <td>130.5</td>
+              <td>53.0</td>
+              <td>70.2</td>
+              <td>57.5</td>
+              <td>35.8</td>
+              <td>58.7</td>
+              <td>68.9</td>
+            </tr>
+            <tr style="border-bottom: double">
+              <td>YOLOv7-X</td>
+              <td>71.3</td>
+              <td>189.9</td>
+              <td>52.9</td>
+              <td>71.1</td>
+              <td>51.4</td>
+              <td>36.9</td>
+              <td>57.7</td>
+              <td>68.6</td>
+            </tr>
+            <tr>
+              <td>YOLOv8-N</td>
+              <td>3.2</td>
+              <td>8.7</td>
+              <td>37.3</td>
+              <td>52.6</td>
+              <td>-</td>
+              <td>-</td>
+              <td>-</td>
+              <td>-</td>
+            </tr>
+            <tr>
+              <td>YOLOv8-S</td>
+                <td>11.2</td>
+                <td>28.6</td>
+                <td>44.9</td>
+                <td>61.8</td>
+                <td>-</td>
+                <td>-</td>
+                <td>-</td>
+                <td>-</td>
+              </tr>
+              <tr>
+                <td>YOLOv8-M</td>
+                <td>25.9</td>
+                <td>78.9</td>
+                <td>50.2</td>
+                <td>67.2</td>
+                <td>-</td>
+                <td>-</td>
+                <td>-</td>
+                <td>-</td>
+              </tr>
+              <tr>
+                <td>YOLOv8-L</td>
+                <td>43.7</td>
+                <td>165.2</td>
+                <td>52.9</td>
+                <td>69.8</td>
+                <td>57.5</td>
+                <td>35.3</td>
+                <td>58.3</td>
+                <td>69.8</td>
+              </tr>
+              <tr style="border-bottom: double">
+                <td>YOLOv8-X</td>
+                <td>68.2</td>
+                <td>257.8</td>
+                <td>53.9</td>
+                <td>71.0</td>
+                <td>58.7</td>
+                <td>35.7</td>
+                <td>59.3</td>
+                <td>70.7</td>
+              </tr>
+              <tr>
+                <td>YOLO MS-N</td>
+                <td>4.5</td>
+                <td>17.4</td>
+                <td>43.4</td>
+                <td>60.4</td>
+                <td>47.6</td>
+                <td>23.7</td>
+                <td>48.3</td>
+                <td>60.3</td>
+              </tr>
+              <tr>
+                <td>YOLO MS-S</td>
+                <td>8.1</td>
+                <td>31.2</td>
+                <td>46.2</td>
+                <td>63.7</td>
+                <td>50.5</td>
+                <td>26.9</td>
+                <td>50.5</td>
+                <td>63.0</td>
+              </tr>
+              <tr style="border-bottom: double">
+                <td>YOLO MS</td>
+                <td>22.2</td>
+                <td>80.2</td>
+                <td>51.0</td>
+                <td>68.6</td>
+                <td>55.7</td>
+                <td>33.1</td>
+                <td>56.1</td>
+                <td>66.5</td>
+              </tr>
+              <tr>
+                <td>RT-DETR R50</td>
+                <td>42</td>
+                <td>136</td>
+                <td>53.1</td>
+                <td>71.3</td>
+                <td>57.7</td>
+                <td>34.8</td>
+                <td>58.0</td>
+                <td>70.0</td>
+              </tr>
+              <tr style="border-bottom: double">
+                <td>RT-DETR R101</td>
+                <td>76</td>
+                <td>259</td>
+                <td>54.3</td>
+                <td>72.7</td>
+                <td>58.6</td>
+                <td>36.0</td>
+                <td>58.8</td>
+                <td>72.1</td>
+              </tr>
+              <tr style="background-color: #e6e6e6;">
+                <td>YOLOv9-S (Ours)</td>
+                <td>7.2</td>
+                <td>26.7</td>
+                <td>46.8</td>
+                <td>63.4</td>
+                <td>50.7</td>
+                <td>26.6</td>
+                <td>56.0</td>
+                <td>64.5</td>
+              </tr>
+              <tr style="background-color: #e6e6e6;">
+                <td>YOLOv9-M (Ours)</td>
+                <td>20.1</td>
+                <td>76.8</td>
+                <td>51.4</td>
+                <td>68.1</td>
+                <td>56.1</td>
+                <td>33.6</td>
+                <td>57.0</td>
+                <td>68.0</td>
+              </tr>
+              <tr style="background-color: #e6e6e6;">
+                <td>YOLOv9-C (Ours)</td>
+                <td>25.5</td>
+                <td>102.8</td>
+                <td>53.0</td>
+                <td>70.2</td>
+                <td>57.8</td>
+                <td>36.2</td>
+                <td>58.5</td>
+                <td>69.3</td>
+              </tr>
+              <tr style="background-color: #e6e6e6;">
+                <td>YOLOv9-E (Ours)</td>
+                <td>58.1</td>
+                <td>192.5</td>
+                <td>55.6</td>
+                <td>72.8</td>
+                <td>60.6</td>
+                <td>40.2</td>
+                <td>61.0</td>
+                <td>71.4</td>
+              </tr>
+            </tbody>
+          </table>
+          
+        <!-- Re-rendering. -->
+
+        <div class="columns is-centered">
+
+          <!-- Visual Effects. -->
+          <div class="column">
+            <div class="content">
+              <h2 class="title is-3">PGI in various tasks</h2>
+              <p>
+                We extend PGI in different tasks, including instance segmentation, panoptic segmentation, and image captioning.
+                In Table, the results prove that PGI can indeed be used in various tasks.
+              </p>
+              <table class="table">
+                <thead>
+                  <tr style="border-bottom: none;">
+                    <th></th>
+                    <th>Detect </th>
+                    <th>Segment </th>
+                    <th>Panoptic </th>
+                    <th>Caption </th>
+                  </tr>
+                  <tr>
+                    <th>metric</th>
+                    <th>AP<sub>box</sub></th>
+                    <th>AP<sub>mask</sub></th>
+                    <th>PQ<sub>pan</sub></th>
+                    <th>BLEU<sub>4</sub><sup>cap</sup></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td><b>no PGI</b></td>
+                    <td>52.5</td>
+                    <td>42.4</td>
+                    <td>39.4</td>
+                    <td>38.8</td>
+                  </tr>
+                  <tr>
+                    <td><b>PGI</b></td>
+                    <td><b>53.0</b></td>
+                    <td><b>43.2</b></td>
+                    <td><b>40.5</b></td>
+                    <td><b>39.1</b></td>
+                  </tr>
+                </tbody>
+              </table>
+              
+            </div>
+          </div>
+          <!--/ Visual Effects. -->
+
+          <!-- Matting. -->
+          <div class="column">
+            <h2 class="title is-3">PGI on small datasets (VOC)</h2>
+            <div class="columns is-centered">
+              <div class="column content">
+                <p>
+                  PGI effectively captures data-target relations, enhancing learning from smaller datasets and improving YOLOv9's transfer learning. 
+                  Table highlights PGI's strong performance in transfer learning on small datasets.
+                </p>
+                <table class="table">
+                  <thead>
+                    <tr>
+                      <th></th>
+                      <th>GELAN-S</th>
+                      <th>YOLOv9-S</th>
+                      <th>YOLOv5-S</th>
+                      <th>YOLOv8-S</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td><b>pretrain</b></td>
+                      <td>COCO</td>
+                      <td>COCO</td>
+                      <td>COCO</td>
+                      <td>COCO</td>
+                    </tr>
+                    <tr>
+                      <td>AP<sub>box</sub></td>
+                      <td>73.5%</td>
+                      <td><b>74.4%</b></td>
+                      <td>62.4%</td>
+                      <td>67.1%</td>
+                    </tr>
+                    <tr>
+                      <td>AP<sub>box</sub><sub>50</sub></td>
+                      <td>89.8%</td>
+                      <td><b>90.4%</b></td>
+                      <td>86.6%</td>
+                      <td>85.8%</td>
+                    </tr>
+                  </tbody>
+                </table>
+
+              </div>
+
+            </div>
+          </div>
+        </div>
+        <!--/ Matting. -->
+
+        <!--/ Re-rendering. -->
+      </div>
+    </div>
+    <!--/ Animation. -->
+
+
+<section class="section" id="BibTeX">
+  <div class="container is-max-desktop content">
+    <h2 class="title">BibTeX</h2>
+    <pre><code>@article{park2021nerfies,
+  author    = {Chien-Yao Wang and I-Hau Yeh and Hong-Yuan Mark Liao},
+  title     = {YOLOv9: Learning What You Want to Learn Using Programmable Gradient Information},
+  journal   = {ECCV},
+  year      = {2024},
+}</code></pre>
+  </div>
+</section>
+
+
+<footer class="footer">
+  <div class="container">
+    <div class="content has-text-centered">
+      <a class="icon-link"
+         href="./static/videos/nerfies_paper.pdf">
+        <i class="fas fa-file-pdf"></i>
+      </a>
+      <a class="icon-link" href="https://github.com/keunhong" class="external-link" disabled>
+        <i class="fab fa-github"></i>
+      </a>
+    </div>
+    <div class="columns is-centered">
+      <div class="column is-8">
+        <div class="content">
+          <p>
+            This website is licensed under a <a rel="license"
+                                                href="http://creativecommons.org/licenses/by-sa/4.0/">Creative
+            Commons Attribution-ShareAlike 4.0 International License</a>.
+          </p>
+          <p>
+            This means you are free to borrow the <a
+              href="https://github.com/nerfies/nerfies.github.io">source code</a> of this website,
+            we just ask that you link back to this page in the footer.
+            Please remember to remove the analytics code included in the header of the website which
+            you do not want on your website.
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>
