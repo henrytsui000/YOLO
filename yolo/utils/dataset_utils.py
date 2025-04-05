@@ -5,9 +5,10 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
-from loguru import logger
+import torch
 
 from yolo.tools.data_conversion import discretize_categories
+from yolo.utils.logger import logger
 
 
 def locate_label_paths(dataset_path: Path, phase_name: Path) -> Tuple[Path, Path]:
@@ -100,7 +101,12 @@ def scale_segmentation(
     h, w = image_dimensions["height"], image_dimensions["width"]
     for anno in annotations:
         category_id = anno["category_id"]
-        seg_list = [item for sublist in anno["segmentation"] for item in sublist]
+        if "segmentation" in anno:
+            seg_list = [item for sublist in anno["segmentation"] for item in sublist]
+        elif "bbox" in anno:
+            x, y, width, height = anno["bbox"]
+            seg_list = [x, y, x + width, y, x + width, y + height, x, y + height]
+
         scaled_seg_data = (
             np.array(seg_list).reshape(-1, 2) / [w, h]
         ).tolist()  # make the list group in x, y pairs and scaled with image width, height
@@ -108,3 +114,24 @@ def scale_segmentation(
         seg_array_with_cat.append(scaled_flat_seg_data)
 
     return seg_array_with_cat
+
+
+def tensorlize(data):
+    try:
+        img_paths, bboxes, img_ratios = zip(*data)
+    except ValueError as e:
+        logger.error(
+            ":rotating_light: This may be caused by using old cache or another version of YOLO's cache.\n"
+            ":rotating_light: Please clean the cache and try running again."
+        )
+        raise e
+    max_box = max(bbox.size(0) for bbox in bboxes)
+    padded_bbox_list = []
+    for bbox in bboxes:
+        padding = torch.full((max_box, 5), -1, dtype=torch.float32)
+        padding[: bbox.size(0)] = bbox
+        padded_bbox_list.append(padding)
+    bboxes = np.stack(padded_bbox_list)
+    img_paths = np.array(img_paths)
+    img_ratios = np.array(img_ratios)
+    return img_paths, bboxes, img_ratios

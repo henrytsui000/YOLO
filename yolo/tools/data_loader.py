@@ -1,31 +1,27 @@
 from pathlib import Path
 from queue import Empty, Queue
+from statistics import mean
 from threading import Event, Thread
 from typing import Generator, List, Tuple, Union
 
 import numpy as np
 import torch
-from loguru import logger
 from PIL import Image
 from rich.progress import track
 from torch import Tensor
 from torch.utils.data import DataLoader, Dataset
-from torch.utils.data.distributed import DistributedSampler
 
 from yolo.config.config import DataConfig, DatasetConfig
-from yolo.tools.data_augmentation import (
-    AugmentationComposer,
-    HorizontalFlip,
-    MixUp,
-    Mosaic,
-    VerticalFlip,
-)
+from yolo.tools.data_augmentation import *
+from yolo.tools.data_augmentation import AugmentationComposer
 from yolo.tools.dataset_preparation import prepare_dataset
 from yolo.utils.dataset_utils import (
     create_image_metadata,
     locate_label_paths,
     scale_segmentation,
+    tensorlize,
 )
+from yolo.utils.logger import logger
 
 
 class YoloDataset(Dataset):
@@ -33,11 +29,14 @@ class YoloDataset(Dataset):
         augment_cfg = data_cfg.data_augment
         self.image_size = data_cfg.image_size
         phase_name = dataset_cfg.get(phase, phase)
+        self.batch_size = data_cfg.batch_size
+        self.dynamic_shape = getattr(data_cfg, "dynamic_shape", False)
+        self.base_size = mean(self.image_size)
 
         transforms = [eval(aug)(prob) for aug, prob in augment_cfg.items()]
-        self.transform = AugmentationComposer(transforms, self.image_size)
+        self.transform = AugmentationComposer(transforms, self.image_size, self.base_size)
         self.transform.get_more_data = self.get_more_data
-        self.data = self.load_data(Path(dataset_cfg.path), phase_name)
+        self.img_paths, self.bboxes, self.ratios = tensorlize(self.load_data(Path(dataset_cfg.path), phase_name))
 
     def load_data(self, dataset_path: Path, phase_name: str):
         """
@@ -53,21 +52,30 @@ class YoloDataset(Dataset):
         cache_path = dataset_path / f"{phase_name}.cache"
 
         if not cache_path.exists():
-            logger.info("🏭 Generating {} cache", phase_name)
-            data = self.filter_data(dataset_path, phase_name)
+            logger.info(f":factory: Generating {phase_name} cache")
+            data = self.filter_data(dataset_path, phase_name, self.dynamic_shape)
             torch.save(data, cache_path)
         else:
-            data = torch.load(cache_path)
-            logger.info("📦 Loaded {} cache", phase_name)
+            try:
+                data = torch.load(cache_path, weights_only=False)
+            except Exception as e:
+                logger.error(
+                    f":rotating_light: Failed to load the cache at '{cache_path}'.\n"
+                    ":rotating_light: This may be caused by using cache from different other YOLO.\n"
+                    ":rotating_light: Please clean the cache and try running again."
+                )
+                raise e
+            logger.info(f":package: Loaded {phase_name} cache")
         return data
 
-    def filter_data(self, dataset_path: Path, phase_name: str) -> list:
+    def filter_data(self, dataset_path: Path, phase_name: str, sort_image: bool = False) -> list:
         """
         Filters and collects dataset information by pairing images with their corresponding labels.
 
         Parameters:
             images_path (Path): Path to the directory containing image files.
             labels_path (str): Path to the directory containing label files.
+            sort_image (bool): If True, sorts the dataset by the width-to-height ratio of images in descending order.
 
         Returns:
             list: A list of tuples, each containing the path to an image file and its associated segmentation as a tensor.
@@ -91,9 +99,6 @@ class YoloDataset(Dataset):
                     continue
                 annotations = annotations_index.get(image_info["id"], [])
                 image_seg_annotations = scale_segmentation(annotations, image_info)
-                if not image_seg_annotations:
-                    continue
-
             elif data_type == "txt":
                 label_path = labels_path / f"{image_id}.txt"
                 if not label_path.is_file():
@@ -106,17 +111,27 @@ class YoloDataset(Dataset):
             labels = self.load_valid_labels(image_id, image_seg_annotations)
 
             img_path = images_path / image_name
-            data.append((img_path, labels))
+            if sort_image:
+                with Image.open(img_path) as img:
+                    width, height = img.size
+            else:
+                width, height = 0, 1
+            data.append((img_path, labels, width / height))
             valid_inputs += 1
-        logger.info("Recorded {}/{} valid inputs", valid_inputs, len(images_list))
+
+        data = sorted(data, key=lambda x: x[2], reverse=True)
+
+        logger.info(f"Recorded {valid_inputs}/{len(images_list)} valid inputs")
         return data
 
     def load_valid_labels(self, label_path: str, seg_data_one_img: list) -> Union[Tensor, None]:
         """
-        Loads and validates bounding box data is [0, 1] from a label file.
+        Loads valid COCO style segmentation data (values between [0, 1]) and converts it to bounding box coordinates
+        by finding the minimum and maximum x and y values.
 
         Parameters:
-            label_path (str): The filepath to the label file containing bounding box data.
+            label_path (str): The filepath to the label file containing annotation data.
+            seg_data_one_img (list): The actual list of annotations (in segmentation format)
 
         Returns:
             Tensor or None: A tensor of all valid bounding boxes if any are found; otherwise, None.
@@ -133,82 +148,89 @@ class YoloDataset(Dataset):
         if bboxes:
             return torch.stack(bboxes)
         else:
-            logger.warning("No valid BBox in {}", label_path)
+            logger.warning(f"No valid BBox in {label_path}")
             return torch.zeros((0, 5))
 
     def get_data(self, idx):
-        img_path, bboxes = self.data[idx]
-        img = Image.open(img_path).convert("RGB")
-        return img, bboxes, img_path
+        img_path, bboxes = self.img_paths[idx], self.bboxes[idx]
+        valid_mask = bboxes[:, 0] != -1
+        with Image.open(img_path) as img:
+            img = img.convert("RGB")
+        return img, torch.from_numpy(bboxes[valid_mask]), img_path
 
     def get_more_data(self, num: int = 1):
         indices = torch.randint(0, len(self), (num,))
         return [self.get_data(idx)[:2] for idx in indices]
 
+    def _update_image_size(self, idx: int) -> None:
+        """Update image size based on dynamic shape and batch settings."""
+        batch_start_idx = (idx // self.batch_size) * self.batch_size
+        image_ratio = self.ratios[batch_start_idx].clip(1 / 3, 3)
+        shift = ((self.base_size / 32 * (image_ratio - 1)) // (image_ratio + 1)) * 32
+
+        self.image_size = [int(self.base_size + shift), int(self.base_size - shift)]
+        self.transform.pad_resize.set_size(self.image_size)
+
     def __getitem__(self, idx) -> Tuple[Image.Image, Tensor, Tensor, List[str]]:
         img, bboxes, img_path = self.get_data(idx)
+
+        if self.dynamic_shape:
+            self._update_image_size(idx)
+
         img, bboxes, rev_tensor = self.transform(img, bboxes)
+        bboxes[:, [1, 3]] *= self.image_size[0]
+        bboxes[:, [2, 4]] *= self.image_size[1]
         return img, bboxes, rev_tensor, img_path
 
     def __len__(self) -> int:
-        return len(self.data)
+        return len(self.bboxes)
 
 
-class YoloDataLoader(DataLoader):
-    def __init__(self, data_cfg: DataConfig, dataset_cfg: DatasetConfig, task: str = "train", use_ddp: bool = False):
-        """Initializes the YoloDataLoader with hydra-config files."""
-        dataset = YoloDataset(data_cfg, dataset_cfg, task)
-        sampler = DistributedSampler(dataset, shuffle=data_cfg.shuffle) if use_ddp else None
-        self.image_size = data_cfg.image_size[0]
-        super().__init__(
-            dataset,
-            batch_size=data_cfg.batch_size,
-            sampler=sampler,
-            shuffle=data_cfg.shuffle and not use_ddp,
-            num_workers=data_cfg.cpu_num,
-            pin_memory=data_cfg.pin_memory,
-            collate_fn=self.collate_fn,
-        )
+def collate_fn(batch: List[Tuple[Tensor, Tensor]]) -> Tuple[Tensor, List[Tensor]]:
+    """
+    A collate function to handle batching of images and their corresponding targets.
 
-    def collate_fn(self, batch: List[Tuple[Tensor, Tensor]]) -> Tuple[Tensor, List[Tensor]]:
-        """
-        A collate function to handle batching of images and their corresponding targets.
+    Args:
+        batch (list of tuples): Each tuple contains:
+            - image (Tensor): The image tensor.
+            - labels (Tensor): The tensor of labels for the image.
 
-        Args:
-            batch (list of tuples): Each tuple contains:
-                - image (Tensor): The image tensor.
-                - labels (Tensor): The tensor of labels for the image.
+    Returns:
+        Tuple[Tensor, List[Tensor]]: A tuple containing:
+            - A tensor of batched images.
+            - A list of tensors, each corresponding to bboxes for each image in the batch.
+    """
+    batch_size = len(batch)
+    target_sizes = [item[1].size(0) for item in batch]
+    # TODO: Improve readability of these process
+    # TODO: remove maxBbox or reduce loss function memory usage
+    batch_targets = torch.zeros(batch_size, min(max(target_sizes), 100), 5)
+    batch_targets[:, :, 0] = -1
+    for idx, target_size in enumerate(target_sizes):
+        batch_targets[idx, : min(target_size, 100)] = batch[idx][1][:100]
 
-        Returns:
-            Tuple[Tensor, List[Tensor]]: A tuple containing:
-                - A tensor of batched images.
-                - A list of tensors, each corresponding to bboxes for each image in the batch.
-        """
-        batch_size = len(batch)
-        target_sizes = [item[1].size(0) for item in batch]
-        # TODO: Improve readability of these proccess
-        # TODO: remove maxBbox or reduce loss function memory usage
-        batch_targets = torch.zeros(batch_size, min(max(target_sizes), 100), 5)
-        batch_targets[:, :, 0] = -1
-        for idx, target_size in enumerate(target_sizes):
-            batch_targets[idx, : min(target_size, 100)] = batch[idx][1][:100]
-        batch_targets[:, :, 1:] *= self.image_size
+    batch_images, _, batch_reverse, batch_path = zip(*batch)
+    batch_images = torch.stack(batch_images)
+    batch_reverse = torch.stack(batch_reverse)
 
-        batch_images, _, batch_reverse, batch_path = zip(*batch)
-        batch_images = torch.stack(batch_images)
-        batch_reverse = torch.stack(batch_reverse)
-
-        return batch_size, batch_images, batch_targets, batch_reverse, batch_path
+    return batch_size, batch_images, batch_targets, batch_reverse, batch_path
 
 
-def create_dataloader(data_cfg: DataConfig, dataset_cfg: DatasetConfig, task: str = "train", use_ddp: bool = False):
+def create_dataloader(data_cfg: DataConfig, dataset_cfg: DatasetConfig, task: str = "train"):
     if task == "inference":
         return StreamDataLoader(data_cfg)
 
-    if dataset_cfg.auto_download:
+    if getattr(dataset_cfg, "auto_download", False):
         prepare_dataset(dataset_cfg, task)
+    dataset = YoloDataset(data_cfg, dataset_cfg, task)
 
-    return YoloDataLoader(data_cfg, dataset_cfg, task, use_ddp)
+    return DataLoader(
+        dataset,
+        batch_size=data_cfg.batch_size,
+        num_workers=data_cfg.cpu_num,
+        pin_memory=data_cfg.pin_memory,
+        collate_fn=collate_fn,
+    )
 
 
 class StreamDataLoader:
@@ -255,7 +277,7 @@ class StreamDataLoader:
     def load_video_file(self, video_path):
         import cv2
 
-        cap = cv2.VideoCapture(video_path)
+        cap = cv2.VideoCapture(str(video_path))
         while self.running:
             ret, frame = cap.read()
             if not ret:

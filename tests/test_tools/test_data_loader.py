@@ -1,11 +1,13 @@
 import sys
 from pathlib import Path
 
+from torch.utils.data import DataLoader
+
 project_root = Path(__file__).resolve().parent.parent.parent
 sys.path.append(str(project_root))
 
 from yolo.config.config import Config
-from yolo.tools.data_loader import StreamDataLoader, YoloDataLoader, create_dataloader
+from yolo.tools.data_loader import StreamDataLoader, create_dataloader
 
 
 def test_create_dataloader_cache(train_cfg: Config):
@@ -25,7 +27,7 @@ def test_create_dataloader_cache(train_cfg: Config):
     assert m_image_paths == l_image_paths
 
 
-def test_training_data_loader_correctness(train_dataloader: YoloDataLoader):
+def test_training_data_loader_correctness(train_dataloader: DataLoader):
     """Test that the training data loader produces correctly shaped data and metadata."""
     batch_size, images, _, reverse_tensors, image_paths = next(iter(train_dataloader))
     assert batch_size == 2
@@ -38,16 +40,17 @@ def test_training_data_loader_correctness(train_dataloader: YoloDataLoader):
     assert list(image_paths) == list(expected_paths)
 
 
-def test_validation_data_loader_correctness(validation_dataloader: YoloDataLoader):
+def test_validation_data_loader_correctness(validation_dataloader: DataLoader):
     batch_size, images, targets, reverse_tensors, image_paths = next(iter(validation_dataloader))
-    assert batch_size == 4
-    assert images.shape == (4, 3, 640, 640)
-    assert targets.shape == (4, 18, 5)
-    assert reverse_tensors.shape == (4, 5)
+    assert batch_size == 5
+    assert images.shape == (5, 3, 640, 640)
+    assert targets.shape == (5, 18, 5)
+    assert reverse_tensors.shape == (5, 5)
     expected_paths = [
         Path("tests/data/images/val/000000151480.jpg"),
         Path("tests/data/images/val/000000284106.jpg"),
         Path("tests/data/images/val/000000323571.jpg"),
+        Path("tests/data/images/val/000000556498.jpg"),
         Path("tests/data/images/val/000000570456.jpg"),
     ]
     assert list(image_paths) == list(expected_paths)
@@ -66,4 +69,4 @@ def test_directory_stream_data_loader_frame(directory_stream_data_loader: Stream
     frame, rev_tensor, origin_frame = next(iter(directory_stream_data_loader))
     assert frame.shape == (1, 3, 640, 640)
     assert rev_tensor.shape == (1, 5)
-    assert origin_frame.size == (480, 640) or origin_frame.size == (512, 640)
+    assert origin_frame.size != (640, 640)

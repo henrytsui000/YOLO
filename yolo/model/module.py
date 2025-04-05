@@ -3,10 +3,10 @@ from typing import Any, Dict, List, Optional, Tuple
 import torch
 import torch.nn.functional as F
 from einops import rearrange
-from loguru import logger
 from torch import Tensor, nn
 from torch.nn.common_types import _size_2_t
 
+from yolo.utils.logger import logger
 from yolo.utils.module_utils import auto_pad, create_activation_function, round_up
 
 
@@ -81,7 +81,7 @@ class Detection(nn.Module):
         self.anc2vec = Anchor2Vec(reg_max=reg_max)
 
         self.anchor_conv[-1].bias.data.fill_(1.0)
-        self.class_conv[-1].bias.data.fill_(-10)
+        self.class_conv[-1].bias.data.fill_(-10)  # TODO: math.log(5 * 4 ** idx / 80 ** 3)
 
     def forward(self, x: Tensor) -> Tuple[Tensor]:
         anchor_x = self.anchor_conv(x)
@@ -130,6 +130,39 @@ class MultiheadDetection(nn.Module):
         return [head(x) for x, head in zip(x_list, self.heads)]
 
 
+# ----------- Segmentation Class ----------- #
+class Segmentation(nn.Module):
+    def __init__(self, in_channels: Tuple[int], num_maskes: int):
+        super().__init__()
+        first_neck, in_channels = in_channels
+
+        mask_neck = max(first_neck // 4, num_maskes)
+        self.mask_conv = nn.Sequential(
+            Conv(in_channels, mask_neck, 3), Conv(mask_neck, mask_neck, 3), nn.Conv2d(mask_neck, num_maskes, 1)
+        )
+
+    def forward(self, x: Tensor) -> Tuple[Tensor]:
+        x = self.mask_conv(x)
+        return x
+
+
+class MultiheadSegmentation(nn.Module):
+    """Mutlihead Segmentation module for Dual segment or Triple segment"""
+
+    def __init__(self, in_channels: List[int], num_classes: int, num_maskes: int, **head_kwargs):
+        super().__init__()
+        mask_channels, proto_channels = in_channels[:-1], in_channels[-1]
+
+        self.detect = MultiheadDetection(mask_channels, num_classes, **head_kwargs)
+        self.heads = nn.ModuleList(
+            [Segmentation((in_channels[0], in_channel), num_maskes) for in_channel in mask_channels]
+        )
+        self.heads.append(Conv(proto_channels, num_maskes, 1))
+
+    def forward(self, x_list: List[torch.Tensor]) -> List[torch.Tensor]:
+        return [head(x) for x, head in zip(x_list, self.heads)]
+
+
 class Anchor2Vec(nn.Module):
     def __init__(self, reg_max: int = 16) -> None:
         super().__init__()
@@ -142,6 +175,20 @@ class Anchor2Vec(nn.Module):
         vector_x = anchor_x.softmax(dim=1)
         vector_x = self.anc2vec(vector_x)[:, 0]
         return anchor_x, vector_x
+
+
+# ----------- Classification Class ----------- #
+class Classification(nn.Module):
+    def __init__(self, in_channel: int, num_classes: int, *, neck_channels=1024, **head_args):
+        super().__init__()
+        self.conv = Conv(in_channel, neck_channels, 1)
+        self.pool = nn.AdaptiveAvgPool2d(1)
+        self.head = nn.Linear(neck_channels, num_classes)
+
+    def forward(self, x: Tensor) -> Tuple[Tensor]:
+        x = self.pool(self.conv(x))
+        x = self.head(x.flatten(start_dim=1))
+        return x
 
 
 # ----------- Backbone Class ----------- #
@@ -166,7 +213,7 @@ class RepConv(nn.Module):
         return self.act(self.conv1(x) + self.conv2(x))
 
 
-class RepNBottleneck(nn.Module):
+class Bottleneck(nn.Module):
     """A bottleneck block with optional residual connections."""
 
     def __init__(
@@ -218,7 +265,7 @@ class RepNCSP(nn.Module):
         self.conv3 = Conv(2 * neck_channels, out_channels, kernel_size, **kwargs)
 
         self.bottleneck = nn.Sequential(
-            *[RepNBottleneck(neck_channels, neck_channels, **neck_args) for _ in range(repeat_num)]
+            *[Bottleneck(neck_channels, neck_channels, **neck_args) for _ in range(repeat_num)]
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -426,7 +473,7 @@ class ImplicitA(nn.Module):
         self.std = std
 
         self.implicit = nn.Parameter(torch.empty(1, channel, 1, 1))
-        nn.init.normal_(self.implicit, mean=mean, std=self.std)
+        nn.init.normal_(self.implicit, mean=self.mean, std=self.std)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.implicit + x
@@ -448,3 +495,36 @@ class ImplicitM(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.implicit * x
+
+
+class DConv(nn.Module):
+    def __init__(self, in_channels=512, alpha=0.8, atoms=512):
+        super().__init__()
+        self.alpha = alpha
+
+        self.CG = Conv(in_channels, atoms, 1)
+        self.GIE = Conv(atoms, atoms, 5, groups=atoms, activation=False)
+        self.D = Conv(atoms, in_channels, 1, activation=False)
+
+    def PONO(self, x):
+        mean = x.mean(dim=1, keepdim=True)
+        std = x.std(dim=1, keepdim=True)
+        x = (x - mean) / (std + 1e-5)
+        return x
+
+    def forward(self, r):
+        x = self.CG(r)
+        x = self.GIE(x)
+        x = self.PONO(x)
+        x = self.D(x)
+        return self.alpha * x + (1 - self.alpha) * r
+
+
+class RepNCSPELAND(RepNCSPELAN):
+    def __init__(self, *args, atoms: 512, rd_args={}, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.dconv = DConv(atoms=atoms, **rd_args)
+
+    def forward(self, x):
+        x = super().forward(x)
+        return self.dconv(x)

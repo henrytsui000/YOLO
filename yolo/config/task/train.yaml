@@ -14,7 +14,9 @@ data:
   data_augment:
     Mosaic: 1
     # MixUp: 1
-    HorizontalFlip: 0.5
+    # HorizontalFlip: 0.5
+    RandomCrop: 1
+    RemoveOutliers: 1e-8
 
 optimizer:
   type: SGD
@@ -22,6 +24,7 @@ optimizer:
     lr: 0.01
     weight_decay: 0.0005
     momentum: 0.937
+    nesterov: true
 
 loss:
   objective:
@@ -47,5 +50,5 @@ scheduler:
     end_factor: 0.01
 
 ema:
-  enabled: true
+  enable: true
   decay: 0.995

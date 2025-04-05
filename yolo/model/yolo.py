@@ -1,13 +1,14 @@
+from collections import OrderedDict
 from pathlib import Path
-from typing import Dict, List, Union
+from typing import Dict, List, Optional, Union
 
 import torch
-from loguru import logger
 from omegaconf import ListConfig, OmegaConf
 from torch import nn
 
 from yolo.config.config import ModelConfig, YOLOLayer
 from yolo.tools.dataset_preparation import prepare_weight
+from yolo.utils.logger import logger
 from yolo.utils.module_utils import get_layer_map
 
 
@@ -31,10 +32,10 @@ class YOLO(nn.Module):
     def build_model(self, model_arch: Dict[str, List[Dict[str, Dict[str, Dict]]]]):
         self.layer_index = {}
         output_dim, layer_idx = [3], 1
-        logger.info(f"🚜 Building YOLO")
+        logger.info(f":tractor: Building YOLO")
         for arch_name in model_arch:
             if model_arch[arch_name]:
-                logger.info(f"  🏗️  Building {arch_name}")
+                logger.info(f"  :building_construction:  Building {arch_name}")
             for layer_idx, layer_spec in enumerate(model_arch[arch_name], start=layer_idx):
                 layer_type, layer_info = next(iter(layer_spec.items()))
                 layer_args = layer_info.get("args", {})
@@ -45,8 +46,11 @@ class YOLO(nn.Module):
                 # Find in channels
                 if any(module in layer_type for module in ["Conv", "ELAN", "ADown", "AConv", "CBLinear"]):
                     layer_args["in_channels"] = output_dim[source]
-                if "Detection" in layer_type:
-                    layer_args["in_channels"] = [output_dim[idx] for idx in source]
+                if any(module in layer_type for module in ["Detection", "Segmentation", "Classification"]):
+                    if isinstance(source, list):
+                        layer_args["in_channels"] = [output_dim[idx] for idx in source]
+                    else:
+                        layer_args["in_channel"] = output_dim[source]
                     layer_args["num_classes"] = self.num_classes
                     layer_args["reg_max"] = self.reg_max
 
@@ -64,20 +68,25 @@ class YOLO(nn.Module):
                 setattr(layer, "out_c", out_channels)
             layer_idx += 1
 
-    def forward(self, x):
-        y = {0: x}
+    def forward(self, x, external: Optional[Dict] = None, shortcut: Optional[str] = None):
+        y = {0: x, **(external or {})}
         output = dict()
         for index, layer in enumerate(self.model, start=1):
             if isinstance(layer.source, list):
                 model_input = [y[idx] for idx in layer.source]
             else:
                 model_input = y[layer.source]
-            x = layer(model_input)
+
+            external_input = {source_name: y[source_name] for source_name in layer.external}
+
+            x = layer(model_input, **external_input)
             y[-1] = x
             if layer.usable:
                 y[index] = x
             if layer.output:
                 output[layer.tags] = x
+                if layer.tags == shortcut:
+                    return output
         return output
 
     def get_out_channels(self, layer_type: str, layer_args: dict, output_dim: list, source: Union[int, list]):
@@ -109,10 +118,44 @@ class YOLO(nn.Module):
             setattr(layer, "in_c", kwargs.get("in_channels", None))
             setattr(layer, "output", layer_info.get("output", False))
             setattr(layer, "tags", layer_info.get("tags", None))
+            setattr(layer, "external", layer_info.get("external", []))
             setattr(layer, "usable", 0)
             return layer
         else:
             raise ValueError(f"Unsupported layer type: {layer_type}")
+
+    def save_load_weights(self, weights: Union[Path, OrderedDict]):
+        """
+        Update the model's weights with the provided weights.
+
+        args:
+            weights: A OrderedDict containing the new weights.
+        """
+        if isinstance(weights, Path):
+            weights = torch.load(weights, map_location=torch.device("cpu"), weights_only=False)
+        if "model_state_dict" in weights:
+            weights = weights["model_state_dict"]
+
+        model_state_dict = self.model.state_dict()
+
+        # TODO1: autoload old version weight
+        # TODO2: weight transform if num_class difference
+
+        error_dict = {"Mismatch": set(), "Not Found": set()}
+        for model_key, model_weight in model_state_dict.items():
+            if model_key not in weights:
+                error_dict["Not Found"].add(tuple(model_key.split(".")[:-2]))
+                continue
+            if model_weight.shape != weights[model_key].shape:
+                error_dict["Mismatch"].add(tuple(model_key.split(".")[:-2]))
+                continue
+            model_state_dict[model_key] = weights[model_key]
+
+        for error_name, error_set in error_dict.items():
+            for weight_name in error_set:
+                logger.warning(f":warning: Weight {error_name} for key: {'.'.join(weight_name)}")
+
+        self.model.load_state_dict(model_state_dict)
 
 
 def create_model(model_cfg: ModelConfig, weight_path: Union[bool, Path] = True, class_num: int = 80) -> YOLO:
@@ -129,12 +172,15 @@ def create_model(model_cfg: ModelConfig, weight_path: Union[bool, Path] = True, 
     if weight_path:
         if weight_path == True:
             weight_path = Path("weights") / f"{model_cfg.name}.pt"
+        elif isinstance(weight_path, str):
+            weight_path = Path(weight_path)
+
         if not weight_path.exists():
             logger.info(f"🌐 Weight {weight_path} not found, try downloading")
             prepare_weight(weight_path=weight_path)
         if weight_path.exists():
-            model.model.load_state_dict(torch.load(weight_path, map_location=torch.device("cpu")), strict=False)
-            logger.info("✅ Success load model & weight")
+            model.save_load_weights(weight_path)
+            logger.info(":white_check_mark: Success load model & weight")
     else:
-        logger.info("✅ Success load model")
+        logger.info(":white_check_mark: Success load model")
     return model

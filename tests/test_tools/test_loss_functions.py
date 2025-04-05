@@ -1,4 +1,5 @@
 import sys
+from math import isinf, isnan
 from pathlib import Path
 
 import pytest
@@ -50,7 +51,6 @@ def data():
 def test_yolo_loss(loss_function, data):
     predicts, targets = data
     loss, loss_dict = loss_function(predicts, predicts, targets)
-    assert torch.isnan(loss)
-    assert torch.isnan(loss_dict["BoxLoss"])
-    assert torch.isnan(loss_dict["DFLoss"])
-    assert torch.isinf(loss_dict["BCELoss"])
+    assert loss_dict["Loss/BoxLoss"] == 0
+    assert loss_dict["Loss/DFLLoss"] == 0
+    assert loss_dict["Loss/BCELoss"] >= 2e5

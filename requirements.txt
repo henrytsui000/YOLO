@@ -1,6 +1,8 @@
 einops
+faster-coco-eval
 graphviz
 hydra-core
+lightning
 loguru
 numpy
 opencv-python

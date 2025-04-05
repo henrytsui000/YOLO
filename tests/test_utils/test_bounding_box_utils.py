@@ -138,34 +138,84 @@ def test_anc2box_autoanchor(inference_v7_cfg: Config):
     anc2box.update((320, 640))
     anchor_grids_shape = [anchor_grid.shape for anchor_grid in anc2box.anchor_grids]
     assert anchor_grids_shape == [
-        torch.Size([1, 1, 80, 80, 2]),
-        torch.Size([1, 1, 40, 40, 2]),
-        torch.Size([1, 1, 20, 20, 2]),
+        torch.Size([1, 1, 80, 40, 2]),
+        torch.Size([1, 1, 40, 20, 2]),
+        torch.Size([1, 1, 20, 10, 2]),
     ]
     assert anc2box.anchor_scale.shape == torch.Size([3, 1, 3, 1, 1, 2])
 
 
 def test_bbox_nms():
-    cls_dist = tensor(
-        [[[0.1, 0.7, 0.2], [0.6, 0.3, 0.1]], [[0.4, 0.4, 0.2], [0.5, 0.4, 0.1]]]  # Example class distribution
-    )
-    bbox = tensor(
-        [[[50, 50, 100, 100], [60, 60, 110, 110]], [[40, 40, 90, 90], [70, 70, 120, 120]]],  # Example bounding boxes
+    cls_dist = torch.tensor(
+        [
+            [
+                [0.7, 0.1, 0.2],  # High confidence, class 0
+                [0.3, 0.6, 0.1],  # High confidence, class 1
+                [-3.0, -2.0, -1.0],  # low confidence, class 2
+                [0.6, 0.2, 0.2],  # Medium confidence, class 0
+            ],
+            [
+                [0.55, 0.25, 0.2],  # Medium confidence, class 0
+                [-4.0, -0.5, -2.0],  # low confidence, class 1
+                [0.15, 0.2, 0.65],  # Medium confidence, class 2
+                [0.8, 0.1, 0.1],  # High confidence, class 0
+            ],
+        ],
         dtype=float32,
     )
-    nms_cfg = NMSConfig(min_confidence=0.5, min_iou=0.5)
 
-    expected_output = [
-        tensor(
+    bbox = torch.tensor(
+        [
             [
-                [1.0000, 50.0000, 50.0000, 100.0000, 100.0000, 0.6682],
-                [0.0000, 60.0000, 60.0000, 110.0000, 110.0000, 0.6457],
-            ]
-        )
-    ]
+                [0, 0, 160, 120],  # Overlaps with box 4
+                [160, 120, 320, 240],
+                [0, 120, 160, 240],
+                [16, 12, 176, 132],
+            ],
+            [
+                [0, 0, 160, 120],  # Overlaps with box 4
+                [160, 120, 320, 240],
+                [0, 120, 160, 240],
+                [16, 12, 176, 132],
+            ],
+        ],
+        dtype=float32,
+    )
+
+    nms_cfg = NMSConfig(min_confidence=0.5, min_iou=0.5, max_bbox=400)
+
+    # Batch 1:
+    #  - box 1 is kept with classes 0 and 2 as it overlaps with box 4 and has a higher confidence for classes 0 and 2.
+    #  - box 2 is kept with classes 0, 1, 2 as it does not overlap with any other box.
+    #  - box 3 is rejected by the confidence filter.
+    #  - box 4 is kept with class 1 as it overlaps with box 1 and has a higher confidence for class 1.
+    # Batch 2:
+    #  - box 1 is kept with classes 1 and 2 as it overlaps with box 1 and has a higher confidence for classes 1 and 2.
+    #  - box 2 is rejected by the confidence filter.
+    #  - box 3 is kept with classes 0, 1, 2 as it does not overlap with any other box.
+    #  - box 4 is kept with class 0 as it overlaps with box 1 and has a higher confidence for class 0.
+    expected_output = torch.tensor(
+        [
+            [
+                [0.0, 0.0, 0.0, 160.0, 120.0, 0.6682],
+                [1.0, 160.0, 120.0, 320.0, 240.0, 0.6457],
+                [0.0, 160.0, 120.0, 320.0, 240.0, 0.5744],
+                [2.0, 0.0, 0.0, 160.0, 120.0, 0.5498],
+                [1.0, 16.0, 12.0, 176.0, 132.0, 0.5498],
+                [2.0, 160.0, 120.0, 320.0, 240.0, 0.5250],
+            ],
+            [
+                [0.0, 16.0, 12.0, 176.0, 132.0, 0.6900],
+                [2.0, 0.0, 120.0, 160.0, 240.0, 0.6570],
+                [1.0, 0.0, 0.0, 160.0, 120.0, 0.5622],
+                [2.0, 0.0, 0.0, 160.0, 120.0, 0.5498],
+                [1.0, 0.0, 120.0, 160.0, 240.0, 0.5498],
+                [0.0, 0.0, 120.0, 160.0, 240.0, 0.5374],
+            ],
+        ]
+    )
 
     output = bbox_nms(cls_dist, bbox, nms_cfg)
-
     for out, exp in zip(output, expected_output):
         assert allclose(out, exp, atol=1e-4), f"Output: {out} Expected: {exp}"
 
@@ -175,9 +225,8 @@ def test_calculate_map():
     ground_truths = tensor([[0, 50, 50, 150, 150], [0, 30, 30, 100, 100]])  # [class, x1, y1, x2, y2]
 
     mAP = calculate_map(predictions, ground_truths)
+    expected_ap50 = tensor(0.5050)
+    expected_ap50_95 = tensor(0.2020)
 
-    expected_ap50 = tensor(0.5)
-    expected_ap50_95 = tensor(0.2)
-
-    assert isclose(mAP["mAP.5"], expected_ap50, atol=1e-5), f"AP50 mismatch"
-    assert isclose(mAP["mAP.5:.95"], expected_ap50_95, atol=1e-5), f"Mean AP mismatch"
+    assert isclose(mAP["map_50"], expected_ap50, atol=1e-4), f"AP50 mismatch"
+    assert isclose(mAP["map"], expected_ap50_95, atol=1e-4), f"Mean AP mismatch"

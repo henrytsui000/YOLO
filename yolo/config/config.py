@@ -45,6 +45,8 @@ class DownloadOptions:
 @dataclass
 class DatasetConfig:
     path: str
+    class_num: int
+    class_list: List[str]
     auto_download: Optional[DownloadOptions]
 
 
@@ -57,12 +59,14 @@ class DataConfig:
     image_size: List[int]
     data_augment: Dict[str, int]
     source: Optional[Union[str, int]]
+    dynamic_shape: Optional[bool]
 
 
 @dataclass
 class OptimizerArgs:
     lr: float
     weight_decay: float
+    momentum: float
 
 
 @dataclass
@@ -94,14 +98,15 @@ class SchedulerConfig:
 
 @dataclass
 class EMAConfig:
-    enabled: bool
+    enable: bool
     decay: float
 
 
 @dataclass
 class NMSConfig:
-    min_confidence: int
-    min_iou: int
+    min_confidence: float
+    min_iou: float
+    max_bbox: int
 
 
 @dataclass
@@ -142,9 +147,6 @@ class Config:
     device: Union[str, int, List[int]]
     cpu_num: int
 
-    class_num: int
-    class_list: List[str]
-    class_idx_id: List[int]
     image_size: List[int]
 
     out_path: str
@@ -152,7 +154,7 @@ class Config:
 
     lucky_number: 10
     use_wandb: bool
-    use_TensorBoard: bool
+    use_tensorboard: bool
 
     weight: Optional[str]
 
@@ -164,6 +166,7 @@ class YOLOLayer(nn.Module):
     tags: str
     layer_type: str
     usable: bool
+    external: Optional[dict]
 
 
 IDX_TO_ID = [

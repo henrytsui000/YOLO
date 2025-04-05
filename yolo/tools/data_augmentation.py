@@ -1,3 +1,5 @@
+from typing import List
+
 import numpy as np
 import torch
 from PIL import Image
@@ -7,11 +9,11 @@ from torchvision.transforms import functional as TF
 class AugmentationComposer:
     """Composes several transforms together."""
 
-    def __init__(self, transforms, image_size: int = [640, 640]):
+    def __init__(self, transforms, image_size: int = [640, 640], base_size: int = 640):
         self.transforms = transforms
         # TODO: handle List of image_size [640, 640]
-        self.image_size = image_size
-        self.pad_resize = PadAndResize(self.image_size)
+        self.pad_resize = PadAndResize(image_size)
+        self.base_size = base_size
 
         for transform in self.transforms:
             if hasattr(transform, "set_parent"):
@@ -25,21 +27,47 @@ class AugmentationComposer:
         return image, boxes, rev_tensor
 
 
-# TODO: RandomCrop, Resize, ... etc.
+class RemoveOutliers:
+    """Removes outlier bounding boxes that are too small or have invalid dimensions."""
+
+    def __init__(self, min_box_area=1e-8):
+        """
+        Args:
+            min_box_area (float): Minimum area for a box to be kept, as a fraction of the image area.
+        """
+        self.min_box_area = min_box_area
+
+    def __call__(self, image, boxes):
+        """
+        Args:
+            image (PIL.Image): The cropped image.
+            boxes (torch.Tensor): Bounding boxes in normalized coordinates (x_min, y_min, x_max, y_max).
+        Returns:
+            PIL.Image: The input image (unchanged).
+            torch.Tensor: Filtered bounding boxes.
+        """
+        box_areas = (boxes[:, 3] - boxes[:, 1]) * (boxes[:, 4] - boxes[:, 2])
+
+        valid_boxes = (box_areas > self.min_box_area) & (boxes[:, 3] > boxes[:, 1]) & (boxes[:, 4] > boxes[:, 2])
+
+        return image, boxes[valid_boxes]
 
 
 class PadAndResize:
-    def __init__(self, image_size, background_color=(128, 128, 128)):
+    def __init__(self, image_size, background_color=(114, 114, 114)):
         """Initialize the object with the target image size."""
         self.target_width, self.target_height = image_size
         self.background_color = background_color
+
+    def set_size(self, image_size: List[int]):
+        self.target_width, self.target_height = image_size
 
     def __call__(self, image: Image, boxes):
         img_width, img_height = image.size
         scale = min(self.target_width / img_width, self.target_height / img_height)
         new_width, new_height = int(img_width * scale), int(img_height * scale)
 
-        resized_image = image.resize((new_width, new_height), Image.LANCZOS)
+        resized_image = image.resize((new_width, new_height), Image.Resampling.LANCZOS)
 
         pad_left = (self.target_width - new_width) // 2
         pad_top = (self.target_height - new_height) // 2
@@ -95,11 +123,11 @@ class Mosaic:
 
         assert self.parent is not None, "Parent is not set. Mosaic cannot retrieve image size."
 
-        img_sz = self.parent.image_size[0]  # Assuming `image_size` is defined in parent
+        img_sz = self.parent.base_size  # Assuming `image_size` is defined in parent
         more_data = self.parent.get_more_data(3)  # get 3 more images randomly
 
         data = [(image, boxes)] + more_data
-        mosaic_image = Image.new("RGB", (2 * img_sz, 2 * img_sz))
+        mosaic_image = Image.new("RGB", (2 * img_sz, 2 * img_sz), (114, 114, 114))
         vectors = np.array([(-1, -1), (0, -1), (-1, 0), (0, 0)])
         center = np.array([img_sz, img_sz])
         all_labels = []
@@ -151,7 +179,38 @@ class MixUp:
         image1, image2 = TF.to_tensor(image), TF.to_tensor(image2)
         mixed_image = lam * image1 + (1 - lam) * image2
 
-        # Mix bounding boxes
-        mixed_boxes = torch.cat([lam * boxes, (1 - lam) * boxes2])
+        # Merge bounding boxes
+        merged_boxes = torch.cat((boxes, boxes2))
 
-        return TF.to_pil_image(mixed_image), mixed_boxes
+        return TF.to_pil_image(mixed_image), merged_boxes
+
+
+class RandomCrop:
+    """Randomly crops the image to half its size along with adjusting the bounding boxes."""
+
+    def __init__(self, prob=0.5):
+        """
+        Args:
+            prob (float): Probability of applying the crop.
+        """
+        self.prob = prob
+
+    def __call__(self, image, boxes):
+        if torch.rand(1) < self.prob:
+            original_width, original_height = image.size
+            crop_height, crop_width = original_height // 2, original_width // 2
+            top = torch.randint(0, original_height - crop_height + 1, (1,)).item()
+            left = torch.randint(0, original_width - crop_width + 1, (1,)).item()
+
+            image = TF.crop(image, top, left, crop_height, crop_width)
+
+            boxes[:, [1, 3]] = boxes[:, [1, 3]] * original_width - left
+            boxes[:, [2, 4]] = boxes[:, [2, 4]] * original_height - top
+
+            boxes[:, [1, 3]] = boxes[:, [1, 3]].clamp(0, crop_width)
+            boxes[:, [2, 4]] = boxes[:, [2, 4]].clamp(0, crop_height)
+
+            boxes[:, [1, 3]] /= crop_width
+            boxes[:, [2, 4]] /= crop_height
+
+        return image, boxes

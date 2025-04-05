@@ -1,20 +1,20 @@
 import math
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Union
 
 import torch
-import torch.nn.functional as F
 from einops import rearrange
-from loguru import logger
-from torch import Tensor, arange, tensor
+from torch import Tensor, tensor
+from torchmetrics.detection import MeanAveragePrecision
 from torchvision.ops import batched_nms
 
-from yolo.config.config import AnchorConfig, MatcherConfig, ModelConfig, NMSConfig
+from yolo.config.config import AnchorConfig, MatcherConfig, NMSConfig
 from yolo.model.yolo import YOLO
+from yolo.utils.logger import logger
 
 
 def calculate_iou(bbox1, bbox2, metrics="iou") -> Tensor:
     metrics = metrics.lower()
-    EPS = 1e-9
+    EPS = 1e-7
     dtype = bbox1.dtype
     bbox1 = bbox1.to(torch.float32)
     bbox2 = bbox2.to(torch.float32)
@@ -69,7 +69,8 @@ def calculate_iou(bbox1, bbox2, metrics="iou") -> Tensor:
         (bbox2[..., 2] - bbox2[..., 0]) / (bbox2[..., 3] - bbox2[..., 1] + EPS)
     )
     v = (4 / (math.pi**2)) * (arctan**2)
-    alpha = v / (v - iou + 1 + EPS)
+    with torch.no_grad():
+        alpha = v / (v - iou + 1 + EPS)
     # Compute CIoU
     ciou = diou - alpha * v
     return ciou.to(dtype)
@@ -129,7 +130,10 @@ def generate_anchors(image_size: List[int], strides: List[int]):
         shift = stride // 2
         h = torch.arange(0, H, stride) + shift
         w = torch.arange(0, W, stride) + shift
-        anchor_h, anchor_w = torch.meshgrid(h, w, indexing="ij")
+        if torch.__version__ >= "2.3.0":
+            anchor_h, anchor_w = torch.meshgrid(h, w, indexing="ij")
+        else:
+            anchor_h, anchor_w = torch.meshgrid(h, w)
         anchor = torch.stack([anchor_w.flatten(), anchor_h.flatten()], dim=-1)
         anchors.append(anchor)
     all_anchors = torch.cat(anchors, dim=0)
@@ -138,28 +142,35 @@ def generate_anchors(image_size: List[int], strides: List[int]):
 
 
 class BoxMatcher:
-    def __init__(self, cfg: MatcherConfig, class_num: int, anchors: Tensor) -> None:
+    def __init__(self, cfg: MatcherConfig, class_num: int, vec2box, reg_max: int) -> None:
         self.class_num = class_num
-        self.anchors = anchors
+        self.vec2box = vec2box
+        self.reg_max = reg_max
         for attr_name in cfg:
             setattr(self, attr_name, cfg[attr_name])
 
     def get_valid_matrix(self, target_bbox: Tensor):
         """
-        Get a boolean mask that indicates whether each target bounding box overlaps with each anchor.
+        Get a boolean mask that indicates whether each target bounding box overlaps with each anchor
+        and is able to correctly predict it with the available reg_max value.
 
         Args:
-            target_bbox [batch x targets x 4]: The bounding box of each targets.
+            target_bbox [batch x targets x 4]: The bounding box of each target.
         Returns:
-            [batch x targets x anchors]: A boolean tensor indicates if target bounding box overlaps with anchors.
+            [batch x targets x anchors]: A boolean tensor indicates if target bounding box overlaps
+            with the anchors, and the anchor is able to predict the target.
         """
-        Xmin, Ymin, Xmax, Ymax = target_bbox[:, :, None].unbind(3)
-        anchors = self.anchors[None, None]  # add a axis at first, second dimension
+        x_min, y_min, x_max, y_max = target_bbox[:, :, None].unbind(3)
+        anchors = self.vec2box.anchor_grid[None, None]  # add a axis at first, second dimension
         anchors_x, anchors_y = anchors.unbind(dim=3)
-        target_in_x = (Xmin < anchors_x) & (anchors_x < Xmax)
-        target_in_y = (Ymin < anchors_y) & (anchors_y < Ymax)
-        target_on_anchor = target_in_x & target_in_y
-        return target_on_anchor
+        x_min_dist, x_max_dist = anchors_x - x_min, x_max - anchors_x
+        y_min_dist, y_max_dist = anchors_y - y_min, y_max - anchors_y
+        targets_dist = torch.stack((x_min_dist, y_min_dist, x_max_dist, y_max_dist), dim=-1)
+        targets_dist /= self.vec2box.scaler[None, None, :, None]  # (1, 1, anchors, 1)
+        min_reg_dist, max_reg_dist = targets_dist.amin(dim=-1), targets_dist.amax(dim=-1)
+        target_on_anchor = min_reg_dist >= 0
+        target_in_reg_max = max_reg_dist <= self.reg_max - 1.01
+        return target_on_anchor & target_in_reg_max
 
     def get_cls_matrix(self, predict_cls: Tensor, target_cls: Tensor) -> Tensor:
         """
@@ -189,44 +200,101 @@ class BoxMatcher:
         """
         return calculate_iou(target_bbox, predict_bbox, self.iou).clamp(0, 1)
 
-    def filter_topk(self, target_matrix: Tensor, topk: int = 10) -> Tuple[Tensor, Tensor]:
+    def filter_topk(self, target_matrix: Tensor, grid_mask: Tensor, topk: int = 10) -> Tuple[Tensor, Tensor]:
         """
         Filter the top-k suitability of targets for each anchor.
 
         Args:
             target_matrix [batch x targets x anchors]: The suitability for each targets-anchors
+            grid_mask [batch x targets x anchors]: The match validity for each target to anchors
             topk (int, optional): Number of top scores to retain per anchor.
 
         Returns:
             topk_targets [batch x targets x anchors]: Only leave the topk targets for each anchor
-            topk_masks [batch x targets x anchors]: A boolean mask indicating the top-k scores' positions.
+            topk_mask [batch x targets x anchors]: A boolean mask indicating the top-k scores' positions.
         """
-        values, indices = target_matrix.topk(topk, dim=-1)
+        masked_target_matrix = grid_mask * target_matrix
+        values, indices = masked_target_matrix.topk(topk, dim=-1)
         topk_targets = torch.zeros_like(target_matrix, device=target_matrix.device)
         topk_targets.scatter_(dim=-1, index=indices, src=values)
-        topk_masks = topk_targets > 0
-        return topk_targets, topk_masks
+        topk_mask = topk_targets > 0
+        return topk_targets, topk_mask
 
-    def filter_duplicates(self, target_matrix: Tensor):
+    def ensure_one_anchor(self, target_matrix: Tensor, topk_mask: tensor) -> Tensor:
         """
-        Filter the maximum suitability target index of each anchor.
+        Ensures each valid target gets at least one anchor matched based on the unmasked target matrix,
+        which enables an otherwise invalid match. This enables too small or too large targets to be
+        learned as well, even if they can't be predicted perfectly.
 
         Args:
             target_matrix [batch x targets x anchors]: The suitability for each targets-anchors
+            topk_mask [batch x targets x anchors]: A boolean mask indicating the top-k scores' positions.
+
+        Returns:
+            topk_mask [batch x targets x anchors]: A boolean mask indicating the updated top-k scores' positions.
+        """
+        values, indices = target_matrix.max(dim=-1)
+        best_anchor_mask = torch.zeros_like(target_matrix, dtype=torch.bool)
+        best_anchor_mask.scatter_(-1, index=indices[..., None], src=~best_anchor_mask)
+        matched_anchor_num = torch.sum(topk_mask, dim=-1)
+        target_without_anchor = (matched_anchor_num == 0) & (values > 0)
+        topk_mask = torch.where(target_without_anchor[..., None], best_anchor_mask, topk_mask)
+        return topk_mask
+
+    def filter_duplicates(self, iou_mat: Tensor, topk_mask: Tensor):
+        """
+        Filter the maximum suitability target index of each anchor based on IoU.
+
+        Args:
+            iou_mat [batch x targets x anchors]: The IoU for each targets-anchors
+            topk_mask [batch x targets x anchors]: A boolean mask indicating the top-k scores' positions.
 
         Returns:
             unique_indices [batch x anchors x 1]: The index of the best targets for each anchors
+            valid_mask [batch x anchors]: Mask indicating the validity of each anchor
+            topk_mask [batch x targets x anchors]: A boolean mask indicating the updated top-k scores' positions.
         """
-        unique_indices = target_matrix.argmax(dim=1)
-        return unique_indices[..., None]
+        duplicates = (topk_mask.sum(1, keepdim=True) > 1).repeat([1, topk_mask.size(1), 1])
+        masked_iou_mat = topk_mask * iou_mat
+        best_indices = masked_iou_mat.argmax(1)[:, None, :]
+        best_target_mask = torch.zeros_like(duplicates, dtype=torch.bool)
+        best_target_mask.scatter_(1, index=best_indices, src=~best_target_mask)
+        topk_mask = torch.where(duplicates, best_target_mask, topk_mask)
+        unique_indices = topk_mask.to(torch.uint8).argmax(dim=1)
+        return unique_indices[..., None], topk_mask.any(dim=1), topk_mask
 
     def __call__(self, target: Tensor, predict: Tuple[Tensor]) -> Tuple[Tensor, Tensor]:
-        """
-        1. For each anchor prediction, find the highest suitability targets
-        2. Select the targets
-        2. Noramlize the class probilities of targets
+        """Matches each target to the most suitable anchor.
+        1. For each anchor prediction, find the highest suitability targets.
+        2. Match target to the best anchor.
+        3. Noramlize the class probilities of targets.
+
+        Args:
+            target: The ground truth class and bounding box information
+                as tensor of size [batch x targets x 5].
+            predict: Tuple of predicted class and bounding box tensors.
+                Class tensor is of size [batch x anchors x class]
+                Bounding box tensor is of size [batch x anchors x 4].
+
+        Returns:
+            anchor_matched_targets: Tensor of size [batch x anchors x (class + 4)].
+                A tensor assigning each target/gt to the best fitting anchor.
+                The class probabilities are normalized.
+            valid_mask: Bool tensor of shape [batch x anchors].
+                True if a anchor has a target/gt assigned to it.
         """
         predict_cls, predict_bbox = predict
+
+        # return if target has no gt information.
+        n_targets = target.shape[1]
+        if n_targets == 0:
+            device = predict_bbox.device
+            align_cls = torch.zeros_like(predict_cls, device=device)
+            align_bbox = torch.zeros_like(predict_bbox, device=device)
+            valid_mask = torch.zeros(predict_cls.shape[:2], dtype=bool, device=device)
+            anchor_matched_targets = torch.cat([align_cls, align_bbox], dim=-1)
+            return anchor_matched_targets, valid_mask
+
         target_cls, target_bbox = target.split([1, 4], dim=-1)  # B x N x (C B) -> B x N x C, B x N x B
         target_cls = target_cls.long().clamp(0)
 
@@ -239,29 +307,32 @@ class BoxMatcher:
         # get cls matrix (cls prob with each gt class and each predict class)
         cls_mat = self.get_cls_matrix(predict_cls.sigmoid(), target_cls)
 
-        target_matrix = grid_mask * (iou_mat ** self.factor["iou"]) * (cls_mat ** self.factor["cls"])
+        target_matrix = (iou_mat ** self.factor["iou"]) * (cls_mat ** self.factor["cls"])
 
         # choose topk
-        topk_targets, topk_mask = self.filter_topk(target_matrix, topk=self.topk)
+        topk_targets, topk_mask = self.filter_topk(target_matrix, grid_mask, topk=self.topk)
+
+        # match best anchor to valid targets without valid anchors
+        topk_mask = self.ensure_one_anchor(target_matrix, topk_mask)
 
         # delete one anchor pred assign to mutliple gts
-        unique_indices = self.filter_duplicates(topk_targets)
-
-        # TODO: do we need grid_mask? Filter the valid groud truth
-        valid_mask = (grid_mask.sum(dim=-2) * topk_mask.sum(dim=-2)).bool()
+        unique_indices, valid_mask, topk_mask = self.filter_duplicates(iou_mat, topk_mask)
 
         align_bbox = torch.gather(target_bbox, 1, unique_indices.repeat(1, 1, 4))
-        align_cls = torch.gather(target_cls, 1, unique_indices).squeeze(-1)
-        align_cls = F.one_hot(align_cls, self.class_num)
+        align_cls_indices = torch.gather(target_cls, 1, unique_indices)
+        align_cls = torch.zeros_like(align_cls_indices, dtype=torch.bool).repeat(1, 1, self.class_num)
+        align_cls.scatter_(-1, index=align_cls_indices, src=~align_cls)
 
         # normalize class ditribution
+        iou_mat *= topk_mask
+        target_matrix *= topk_mask
         max_target = target_matrix.amax(dim=-1, keepdim=True)
         max_iou = iou_mat.amax(dim=-1, keepdim=True)
         normalize_term = (target_matrix / (max_target + 1e-9)) * max_iou
         normalize_term = normalize_term.permute(0, 2, 1).gather(2, unique_indices)
         align_cls = align_cls * normalize_term * valid_mask[:, :, None]
-
-        return torch.cat([align_cls, align_bbox], dim=-1), valid_mask.bool()
+        anchor_matched_targets = torch.cat([align_cls, align_bbox], dim=-1)
+        return anchor_matched_targets, valid_mask
 
 
 class Vec2Box:
@@ -269,26 +340,35 @@ class Vec2Box:
         self.device = device
 
         if hasattr(anchor_cfg, "strides"):
-            logger.info(f"🈶 Found stride of model {anchor_cfg.strides}")
+            logger.info(f":japanese_not_free_of_charge_button: Found stride of model {anchor_cfg.strides}")
             self.strides = anchor_cfg.strides
         else:
-            logger.info("🧸 Found no stride of model, performed a dummy test for auto-anchor size")
+            logger.info(":teddy_bear: Found no stride of model, performed a dummy test for auto-anchor size")
             self.strides = self.create_auto_anchor(model, image_size)
 
         anchor_grid, scaler = generate_anchors(image_size, self.strides)
+        self.image_size = image_size
         self.anchor_grid, self.scaler = anchor_grid.to(device), scaler.to(device)
 
     def create_auto_anchor(self, model: YOLO, image_size):
-        dummy_input = torch.zeros(1, 3, *image_size).to(self.device)
+        W, H = image_size
+        # TODO: need accelerate dummy test
+        dummy_input = torch.zeros(1, 3, H, W)
         dummy_output = model(dummy_input)
         strides = []
         for predict_head in dummy_output["Main"]:
             _, _, *anchor_num = predict_head[2].shape
-            strides.append(image_size[1] // anchor_num[1])
+            strides.append(W // anchor_num[1])
         return strides
 
     def update(self, image_size):
+        """
+        image_size: W, H
+        """
+        if self.image_size == image_size:
+            return
         anchor_grid, scaler = generate_anchors(image_size, self.strides)
+        self.image_size = image_size
         self.anchor_grid, self.scaler = anchor_grid.to(self.device), scaler.to(self.device)
 
     def __call__(self, predicts):
@@ -313,10 +393,10 @@ class Anc2Box:
         self.device = device
 
         if hasattr(anchor_cfg, "strides"):
-            logger.info(f"🈶 Found stride of model {anchor_cfg.strides}")
+            logger.info(f":japanese_not_free_of_charge_button: Found stride of model {anchor_cfg.strides}")
             self.strides = anchor_cfg.strides
         else:
-            logger.info("🧸 Found no stride of model, performed a dummy test for auto-anchor size")
+            logger.info(":teddy_bear: Found no stride of model, performed a dummy test for auto-anchor size")
             self.strides = self.create_auto_anchor(model, image_size)
 
         self.head_num = len(anchor_cfg.anchor)
@@ -326,12 +406,13 @@ class Anc2Box:
         self.class_num = model.num_classes
 
     def create_auto_anchor(self, model: YOLO, image_size):
-        dummy_input = torch.zeros(1, 3, *image_size).to(self.device)
+        W, H = image_size
+        dummy_input = torch.zeros(1, 3, H, W).to(self.device)
         dummy_output = model(dummy_input)
         strides = []
         for predict_head in dummy_output["Main"]:
             _, _, *anchor_num = predict_head.shape
-            strides.append(image_size[1] // anchor_num[1])
+            strides.append(W // anchor_num[1])
         return strides
 
     def generate_anchors(self, image_size: List[int]):
@@ -344,7 +425,7 @@ class Anc2Box:
         return anchor_grids
 
     def update(self, image_size):
-        self.anchor_grid = self.generate_anchors(image_size)
+        self.anchor_grids = self.generate_anchors(image_size)
 
     def __call__(self, predicts: List[Tensor]):
         preds_box, preds_cls, preds_cnf = [], [], []
@@ -368,7 +449,7 @@ class Anc2Box:
         return preds_cls, None, preds_box, preds_cnf.sigmoid()
 
 
-def create_converter(model_version: str = "v9-c", *args, **kwargs):
+def create_converter(model_version: str = "v9-c", *args, **kwargs) -> Union[Anc2Box, Vec2Box]:
     if "v7" in model_version:  # check model if v7
         converter = Anc2Box(*args, **kwargs)
     else:
@@ -379,15 +460,11 @@ def create_converter(model_version: str = "v9-c", *args, **kwargs):
 def bbox_nms(cls_dist: Tensor, bbox: Tensor, nms_cfg: NMSConfig, confidence: Optional[Tensor] = None):
     cls_dist = cls_dist.sigmoid() * (1 if confidence is None else confidence)
 
-    # filter class by confidence
-    cls_val, cls_idx = cls_dist.max(dim=-1, keepdim=True)
-    valid_mask = cls_val > nms_cfg.min_confidence
-    valid_cls = cls_idx[valid_mask].float()
-    valid_con = cls_val[valid_mask].float()
-    valid_box = bbox[valid_mask.repeat(1, 1, 4)].view(-1, 4)
+    batch_idx, valid_grid, valid_cls = torch.where(cls_dist > nms_cfg.min_confidence)
+    valid_con = cls_dist[batch_idx, valid_grid, valid_cls]
+    valid_box = bbox[batch_idx, valid_grid]
 
-    batch_idx, *_ = torch.where(valid_mask)
-    nms_idx = batched_nms(valid_box, valid_cls, batch_idx, nms_cfg.min_iou)
+    nms_idx = batched_nms(valid_box, valid_con, batch_idx + valid_cls * bbox.size(0), nms_cfg.min_iou)
     predicts_nms = []
     for idx in range(cls_dist.size(0)):
         instance_idx = nms_idx[idx == batch_idx[nms_idx]]
@@ -396,54 +473,19 @@ def bbox_nms(cls_dist: Tensor, bbox: Tensor, nms_cfg: NMSConfig, confidence: Opt
             [valid_cls[instance_idx][:, None], valid_box[instance_idx], valid_con[instance_idx][:, None]], dim=-1
         )
 
-        predicts_nms.append(predict_nms)
+        predicts_nms.append(predict_nms[: nms_cfg.max_bbox])
     return predicts_nms
 
 
-def calculate_map(predictions, ground_truths, iou_thresholds=arange(0.5, 1, 0.05)) -> Dict[str, Tensor]:
-    # TODO: Refactor this block, Flexible for calculate different mAP condition?
-    device = predictions.device
-    n_preds = predictions.size(0)
-    n_gts = (ground_truths[:, 0] != -1).sum()
-    ground_truths = ground_truths[:n_gts]
-    aps = []
-
-    ious = calculate_iou(predictions[:, 1:-1], ground_truths[:, 1:])  # [n_preds, n_gts]
-
-    for threshold in iou_thresholds:
-        tp = torch.zeros(n_preds, device=device)
-        fp = torch.zeros(n_preds, device=device)
-
-        max_iou, max_indices = torch.max(ious, dim=1)
-        above_threshold = max_iou >= threshold
-        matched_classes = predictions[:, 0] == ground_truths[max_indices, 0]
-        tp[above_threshold & matched_classes] = 1
-        fp[above_threshold & ~matched_classes] = 1
-        fp[max_iou < threshold] = 1
-
-        _, indices = torch.sort(predictions[:, 1], descending=True)
-        tp = tp[indices]
-        fp = fp[indices]
-
-        tp_cumsum = torch.cumsum(tp, dim=0)
-        fp_cumsum = torch.cumsum(fp, dim=0)
-
-        precision = tp_cumsum / (tp_cumsum + fp_cumsum + 1e-6)
-        recall = tp_cumsum / (n_gts + 1e-6)
-
-        precision = torch.cat([torch.ones(1, device=device), precision, torch.zeros(1, device=device)])
-        recall = torch.cat([torch.zeros(1, device=device), recall, torch.ones(1, device=device)])
-
-        precision, _ = torch.cummax(precision.flip(0), dim=0)
-        precision = precision.flip(0)
-
-        indices = (recall[1:] != recall[:-1]).nonzero(as_tuple=True)[0]
-        ap = torch.sum((recall[indices + 1] - recall[indices]) * precision[indices + 1])
-
-        aps.append(ap)
-
-    mAP = {
-        "mAP.5": aps[0],
-        "mAP.5:.95": torch.mean(torch.stack(aps)),
-    }
+def calculate_map(predictions, ground_truths) -> Dict[str, Tensor]:
+    metric = MeanAveragePrecision(iou_type="bbox", box_format="xyxy")
+    mAP = metric([to_metrics_format(predictions)], [to_metrics_format(ground_truths)])
     return mAP
+
+
+def to_metrics_format(prediction: Tensor) -> Dict[str, Union[float, Tensor]]:
+    prediction = prediction[prediction[:, 0] != -1]
+    bbox = {"boxes": prediction[:, 1:5], "labels": prediction[:, 0].int()}
+    if prediction.size(1) == 6:
+        bbox["scores"] = prediction[:, 5]
+    return bbox

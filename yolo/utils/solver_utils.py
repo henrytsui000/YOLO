@@ -1,5 +1,6 @@
 import contextlib
 import io
+from typing import Dict
 
 import numpy as np
 from pycocotools.coco import COCO
@@ -17,20 +18,20 @@ def calculate_ap(coco_gt: COCO, pd_path):
     return coco_eval.stats
 
 
-def make_ap_table(score, past_result=[], last_score=None, epoch=-1):
+def make_ap_table(score: Dict[str, float], past_result=[], max_result=None, epoch=-1):
     ap_table = Table()
     ap_table.add_column("Epoch", justify="center", style="white", width=5)
     ap_table.add_column("Avg. Precision", justify="left", style="cyan")
-    ap_table.add_column("", justify="right", style="green", width=5)
+    ap_table.add_column("%", justify="right", style="green", width=5)
     ap_table.add_column("Avg. Recall", justify="left", style="cyan")
-    ap_table.add_column("", justify="right", style="green", width=5)
+    ap_table.add_column("%", justify="right", style="green", width=5)
 
     for eps, (ap_name1, ap_color1, ap_value1, ap_name2, ap_color2, ap_value2) in past_result:
         ap_table.add_row(f"{eps: 3d}", ap_name1, f"{ap_color1}{ap_value1:.2f}", ap_name2, f"{ap_color2}{ap_value2:.2f}")
     if past_result:
         ap_table.add_row()
 
-    color = np.where(last_score <= score, "[green]", "[red]")
+    color = np.where(max_result <= score, "[green]", "[red]")
 
     this_ap = ("AP @ .5:.95", color[0], score[0], "AP @        .5", color[1], score[1])
     metrics = [
