@@ -1,0 +1,546 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="utf-8">
+  <meta name="description"
+    content="YOLO-RD: Introducing Relevant and Compact Explicit Knowledge to YOLO by Retriever-Dictionary.">
+  <meta name="keywords" content="Yolo, Detection, Real-Time Object Detection">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>YOLO-RD: Introducing Relevant and Compact Explicit Knowledge to YOLO by Retriever-Dictionary</title>
+
+  <!-- Global site tag (gtag.js) - Google Analytics -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-PYVRSFMDRL"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+
+    function gtag() {
+      dataLayer.push(arguments);
+    }
+
+    gtag('js', new Date());
+
+    gtag('config', 'G-PYVRSFMDRL');
+  </script>
+
+  <link href="https://fonts.googleapis.com/css?family=Google+Sans|Noto+Sans|Castoro" rel="stylesheet">
+
+  <link rel="stylesheet" href="./static/css/bulma.min.css">
+  <link rel="stylesheet" href="./static/css/bulma-carousel.min.css">
+  <link rel="stylesheet" href="./static/css/bulma-slider.min.css">
+  <link rel="stylesheet" href="./static/css/fontawesome.all.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/jpswalsh/academicons@1/css/academicons.min.css">
+  <link rel="stylesheet" href="./static/css/index.css">
+  <link rel="icon" href="./static/images/iislogo.png">
+
+  <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+  <script defer src="./static/js/fontawesome.all.min.js"></script>
+  <script src="./static/js/bulma-carousel.min.js"></script>
+  <script src="./static/js/bulma-slider.min.js"></script>
+  <script src="./static/js/index.js"></script>
+</head>
+
+<body>
+
+  <nav class="navbar" role="navigation" aria-label="main navigation">
+    <div class="navbar-brand">
+      <a role="button" class="navbar-burger" aria-label="menu" aria-expanded="false">
+        <span aria-hidden="true"></span>
+        <span aria-hidden="true"></span>
+        <span aria-hidden="true"></span>
+      </a>
+    </div>
+    <div class="navbar-menu">
+      <div class="navbar-start" style="flex-grow: 1; justify-content: center;">
+        <a class="navbar-item" href="https://keunhong.com">
+          <span class="icon">
+            <i class="fas fa-home"></i>
+          </span>
+        </a>
+
+        <div class="navbar-item has-dropdown is-hoverable">
+          <a class="navbar-link">
+            More Research
+          </a>
+          <div class="navbar-dropdown">
+            <a class="navbar-item" href="https://github.com/WongKinYiu/PyTorch_YOLOv4">
+              YOLOv4
+            </a>
+            <a class="navbar-item" href="https://github.com/WongKinYiu/yolor">
+              YOLO-R
+            </a>
+            <a class="navbar-item" href="https://github.com/WongKinYiu/yolov7">
+              YOLOv7
+            </a>
+            <a class="navbar-item" href="https://henrytsui000.github.io/YOLO/v9">
+              YOLOv9
+            </a>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </nav>
+
+
+  <section class="hero">
+    <div class="hero-body">
+      <div class="container is-max-desktop">
+        <div class="columns is-centered">
+          <div class="column has-text-centered">
+            <h1 class="title is-1 publication-title">[ICLR 2025] YOLO-RD: Introducing Relevant and Compact Explicit
+              Knowledge to YOLO by Retriever-Dictionary</h1>
+            <div class="is-size-5 publication-authors">
+              <span class="author-block">
+                <a href="https://henrytsui000.github.io/mypage/">Hao-Tang
+                  Tsui</a><sup>1</sup>,</span>
+              <span class="author-block">
+                <a href="https://homepage.iis.sinica.edu.tw/pages/kinyiu/index_en.html">Chien-Yao
+                  Wang</a><sup>1</sup>,</span>
+              <span class="author-block">
+                <a href="https://homepage.iis.sinica.edu.tw/pages/liao/index_en.html">Hong-Yuan Mark
+                  Liao</a><sup>1</sup>
+              </span>
+            </div>
+
+            <div class="is-size-5 publication-authors">
+              <span class="author-block"><sup>1</sup>Institute of Information Science, Academia Sinica, Taiwan</span>
+            </div>
+
+            <div class="column has-text-centered">
+              <div class="publication-links">
+                <!-- PDF Link. -->
+                <span class="link-block">
+                  <a href="https://openreview.net/pdf?id=KXDOmD7DM7"
+                    class="external-link button is-normal is-rounded is-dark">
+                    <span class="icon">
+                      <i class="fas fa-file-pdf"></i>
+                    </span>
+                    <span>Paper</span>
+                  </a>
+                </span>
+                <span class="link-block">
+                  <a href="https://arxiv.org/abs/2410.15346" class="external-link button is-normal is-rounded is-dark">
+                    <span class="icon">
+                      <i class="ai ai-arxiv"></i>
+                    </span>
+                    <span>arXiv</span>
+                  </a>
+                </span>
+                <!-- Video Link. -->
+                <!-- #TODO: Add video -->
+                <span class="link-block">
+                  <a href="https://www.youtube.com/watch?v=gu9aaVqgiDY"
+                    class="external-link button is-normal is-rounded is-dark">
+                    <span class="icon">
+                      <i class="fab fa-youtube"></i>
+                    </span>
+                    <span>Video</span>
+                  </a>
+                </span>
+                <!-- Code Link. -->
+                <span class="link-block">
+                  <a href="https://github.com/MultimediaTechLab/YOLO"
+                    class="external-link button is-normal is-rounded is-dark">
+                    <span class="icon">
+                      <i class="fab fa-github"></i>
+                    </span>
+                    <span>GitHub</span>
+                  </a>
+                </span>
+                <!-- Dataset Link. -->
+                <span class="link-block">
+                  <a href="https://github.com/MultimediaTechLab/YOLO/releases/tag/v1.0-alpha"
+                    class="external-link button is-normal is-rounded is-dark">
+                    <span class="icon">
+                      <i class="far fa-images"></i>
+                    </span>
+                    <span>Model</span>
+                  </a>
+                </span>
+                <!-- Dataset Link. -->
+                <span class="link-block">
+                  <a href="https://huggingface.co/spaces/henry000/YOLO"
+                    class="external-link button is-normal is-rounded is-dark">
+                    <span class="icon">
+                      <i class="far fa-images"></i>
+                    </span>
+                    <span>Demo</span>
+                  </a>
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="hero teaser">
+    <div class="container is-max-desktop">
+      <div class="hero-body">
+        <img src="./static/images/YOLO-RD.png" class="interpolation-image" alt="Interpolate start reference image." />
+
+        <h2 class="subtitle has-text-centered">
+          <span class="dnerf">YOLO-RD</span>, a module provides visual model 'dataset information' through <i>Retriever
+            Dictionary</i>.
+        </h2>
+      </div>
+    </div>
+  </section>
+
+
+  <section class="hero is-light">
+    <div class="hero-body">
+      <div class="container is-max-desktop">
+        <!-- Abstract. -->
+        <div class="columns is-centered has-text-centered">
+          <div class="column is-four-fifths">
+            <h2 class="title is-2">🧾 Abstract</h2>
+            <div class="content has-text-justified">
+              <p>
+                Identifying and localizing objects within images is a fundamental challenge, and numerous efforts have
+                been made to enhance model accuracy by experimenting with diverse architectures and refining training
+                strategies. Nevertheless, a prevalent limitation in existing models is overemphasizing the current input
+                while ignoring the information from the entire dataset.
+              </p>
+              <p>
+
+                We introduce an innovative <i>Retriever-Dictionary</i> (RD) module to address this issue. This
+                architecture
+                enables YOLO-based models to efficiently retrieve features from a Dictionary that contains the insight
+                of the dataset, which is built by the knowledge from Visual Models (VM), Large Language Models (LLM), or
+                Visual Language Models (VLM). The flexible RD enables the model to incorporate such explicit knowledge
+                that enhances the ability to benefit multiple tasks, specifically, segmentation, detection, and
+                classification, from pixel to image level.
+              </p>
+              <p>
+                The experiments show that using the RD significantly improves
+                model performance, achieving more than a 3% increase in mean Average Precision for object detection
+                with less than a 1% increase in model parameters. Beyond 1-stage object detection models, the RD module
+                improves the effectiveness of 2-stage models and DETR-based architectures, such as Faster R-CNN and
+                DETR.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+      <!--/ Abstract. -->
+
+      <!-- Paper video. -->
+      <!-- # TODO: upload and record intro video -->
+      <!-- <div class="columns is-centered has-text-centered">
+        <div class="column is-four-fifths">
+          <h2 class="title is-2">🎥 Video</h2>
+          <div class="publication-video">
+            <iframe src="https://www.youtube.com/embed/gu9aaVqgiDY?rel=0&amp;showinfo=0" frameborder="0"
+              allow="autoplay; encrypted-media" allowfullscreen></iframe>
+          </div>
+        </div>
+      </div> -->
+      <!--/ Paper video. -->
+    </div>
+  </section>
+
+
+  <section class="section">
+    <div class="container is-max-desktop">
+
+      <h2 class="title is-2 has-text-centered">🔬 Method</h2>
+
+        <!-- Visual Effects. -->
+        <h2 class="title is-4">Initialize</h2>
+        <div class="columns">
+          <div class="column">
+            <p>
+              PGI combines Reversible Branches and Deep Supervision to provide accurate gradients.
+              It introduces auxiliary branches that shorten paths or reuse inputs, improving information retention and
+              gradient precision.
+              Unlike traditional Deep Supervision, PGI works with small models and allows removable branches during
+              inference, enhancing speed without sacrificing performance.
+            </p>
+          </div>
+          <div class="column">
+            <img src="./static/images/RD_1.png" class="interpolation-image" alt="Interpolate start reference image." />
+          </div>
+        </div>
+        <!--/ Visual Effects. -->
+
+        <!-- Matting. -->
+        <h2 class="title is-4">Training</h2>
+        <div class="columns">
+          <div class="column">
+            <p>
+              GELAN, the Generalized Efficient Layer Aggregation Network, reduces data loss by combining CSPNet and
+              ELAN.
+              CSPNet splits and merges features, while ELAN aggregates information across layers. We generalize ELAN
+              to use any network block, and here we use CSPNet.
+              Unlike ResNet, GELAN maintains data quality even beyond 100 layers, easing the model's learning effort.
+            </p>
+          </div>
+          <div class="column">
+            <img src="./static/images/RD_1.png" class="interpolation-image"
+              alt="Interpolate start reference image." />
+          </div>
+
+        </div>
+        <h2 class="title is-4">Compress</h2>
+        <div class="columns">
+          <div class="column">
+            <p>
+              GELAN, the Generalized Efficient Layer Aggregation Network, reduces data loss by combining CSPNet and
+              ELAN.
+              CSPNet splits and merges features, while ELAN aggregates information across layers. We generalize ELAN
+              to use any network block, and here we use CSPNet.
+              Unlike ResNet, GELAN maintains data quality even beyond 100 layers, easing the model's learning effort.
+            </p>
+          </div>
+          <div class="column">
+            <img src="./static/images/RD_1.png" class="interpolation-image"
+              alt="Interpolate start reference image." />
+          </div>
+        </div>
+      <!--/ Matting. -->
+
+      <!-- Animation. -->
+      <div class="columns is-centered">
+        <div class="column is-full-width">
+          <h2 class="title is-2 has-text-centered">📺 Demo</h2>
+          <h3 class="title is-4">Real-Time Demo</h3>
+
+          <script type="module" src="https://gradio.s3-us-west-2.amazonaws.com/4.36.1/gradio.js"></script>
+
+          <gradio-app src="https://henry000-yolo.hf.space"></gradio-app>
+
+          <!-- Re-rendering. -->
+        </div>
+      </div>
+      <!--/ Animation. -->
+
+      <!-- Animation. -->
+      <div class="columns is-centered">
+        <div class="column is-full-width">
+          <h2 class="title is-2 has-text-centered">🧪 Experiments</h2>
+
+          <table class="table is-fullwidth is-mobile">
+            <caption class="has-text-weight-semibold">
+              Comparing the performance and the improvements across different modalities of RD-module and structures on the MSCOCO.
+            </caption>
+            <thead>
+              <tr>
+                <th>Initializer</th>
+                <th>BackBone</th>
+                <th>Params</th>
+                <th>Latency</th>
+                <th>mAP<sup>val</sup><sub>.5:.95</sub> (%)</th>
+                <th>mAP<sup>val</sup><sub>.5</sub> (%)</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr><td rowspan="5" style="vertical-align: middle"><strong>Baseline</strong></td></tr>
+              <tr><td style="border: none;">YOLOv7</td><td style="border: none;">37.2M</td><td style="border: none;">3.59</td><td style="border: none;">50.04</td><td style="border: none;">68.65</td></tr>
+              <tr><td style="border: none;">YOLOv9</td><td style="border: none;">25.3M</td><td style="border: none;">4.00</td><td style="border: none;">52.64</td><td style="border: none;">69.56</td></tr>
+              <tr><td style="border: none;">Faster-RCNN</td><td style="border: none;">43.1M</td><td style="border: none;">41.00</td><td style="border: none;">38.40</td><td style="border: none;">59.00</td></tr>
+              <tr><td>Deformable DETR</td><td>40.1M</td><td>41.10</td><td>43.80</td><td>62.60</td></tr>
+          
+              <tr><td rowspan="5" style="vertical-align: middle"><strong>With VM</strong></td></tr>
+              <tr><td style="border: none;">YOLOv7</td><td style="border: none;">37.4M</td><td style="border: none;">3.70</td><td style="border: none;">51.37 <span style="color:red;">(↥ 2.66%)</span></td><td style="border: none;">69.42 <span style="color:red;">(↥ 1.13%)</span></td></tr>
+              <tr><td style="border: none;">YOLOv9</td><td style="border: none;">25.5M</td><td style="border: none;">4.16</td><td style="border: none;">53.41 <span style="color:red;">(↥ 1.46%)</span></td><td style="border: none;">70.57 <span style="color:red;">(↥ 1.46%)</span></td></tr>
+              <tr><td style="border: none;">Faster-RCNN</td><td style="border: none;">44.1M</td><td style="border: none;">41.00</td><td style="border: none;">40.50 <span style="color:red;">(↥ 5.47%)</span></td><td style="border: none;">60.30 <span style="color:red;">(↥ 2.20%)</span></td></tr>
+              <tr><td>Deformable DETR</td><td>41.2M</td><td>41.10</td></td><td>44.10 <span style="color:red;">(↥ 0.68%)</span></td><td>63.30 <span style="color:red;">(↥ 1.12%)</span></td></tr>
+          
+              <tr><td rowspan="5" style="vertical-align: middle"><strong>With VLM</strong></td></tr>
+              <tr><td style="border: none;">YOLOv7</td><td style="border: none;">37.4M</td><td style="border: none;">3.70</td><td style="border: none;">51.75 <span style="color:red;">(↥ 3.42%)</span></td><td style="border: none;">70.12 <span style="color:red;">(↥ 2.15%)</span></td></tr>
+              <tr><td style="border: none;">YOLOv9</td><td style="border: none;">25.5M</td><td style="border: none;">4.16</td><td style="border: none;">53.36 <span style="color:red;">(↥ 1.37%)</span></td><td style="border: none;">70.55 <span style="color:red;">(↥ 1.43%)</span></td></tr>
+              <tr><td style="border: none;">Faster-RCNN</td><td style="border: none;">44.1M</td><td style="border: none;">41.02</td><td style="border: none;">40.50 <span style="color:red;">(↥ 5.47%)</span></td><td style="border: none;">60.40 <span style="color:red;">(↥ 2.37%)</span></td></tr>
+              <tr><td>Deformable DETR</td><td>41.2M</td><td>41.28</td></td><td>44.40 <span style="color:red;">(↥ 1.37%)</span></td><td>63.30 <span style="color:red;">(↥ 1.12%)</span></td></tr>
+          
+              <tr><td rowspan="5" style="border: none; vertical-align: middle"><strong>With LLM</strong></td></tr>
+              <tr><td style="border: none;">YOLOv7</td><td style="border: none;">38.2M</td><td style="border: none;">3.79</td><td style="border: none;">51.36 <span style="color:red;">(↥ 2.64%)</span></td><td style="border: none;">69.40 <span style="color:red;">(↥ 1.17%)</span></td></tr>
+              <tr><td style="border: none;">YOLOv9</td><td style="border: none;">25.8M</td><td style="border: none;">4.20</td><td style="border: none;">53.28 <span style="color:red;">(↥ 1.22%)</span></td><td style="border: none;">70.48 <span style="color:red;">(↥ 1.33%)</span></td></tr>
+              <tr><td style="border: none;">Faster-RCNN</td><td style="border: none;">44.6M</td><td style="border: none;">41.03</td><td style="border: none;">40.70 <span style="color:red;">(↥ 5.99%)</span></td><td style="border: none;">60.80 <span style="color:red;">(↥ 3.05%)</span></td></tr>
+              <tr><td style="border: none;">Deformable DETR</td><td style="border: none;">41.7M</td><td style="border: none;">41.35</td><td style="border: none;">44.16 <span style="color:red;">(↥ 0.91%)</span></td><td style="border: none;">63.10 <span style="color:red;">(↥ 1.12%)</span></td></tr>
+            </tbody>
+          </table>
+          
+          
+
+          <!-- Re-rendering. -->
+
+          <div class="columns is-centered">
+
+            <!-- Visual Effects. -->
+            <div class="column">
+              <div class="content">
+                <h2 class="title is-3">Different knowledge-based methods</h2>
+                <p>
+                  Overall, RD not only offers the lightest solution, with only 0.2 additional parameters but also delivers the best performance, making it a highly efficient and effective approach.
+                </p>
+                <table class="table is-fullwidth">
+                  <thead>
+                    <tr>
+                      <th>Method</th>
+                      <th>mAP</th>
+                      <th>mAP<sub>.5</sub></th>
+                      <th>+Params</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td style="border: none;">baseline</td>
+                      <td style="border: none;">52.64</td>
+                      <td style="border: none;">69.56</td>
+                      <td style="border: none;">-</td>
+                    </tr>
+                    <tr>
+                      <td style="border: none;">KD</td>
+                      <td style="border: none;">52.52</td>
+                      <td style="border: none;">69.14</td>
+                      <td style="border: none;">57.3M</td>
+                    </tr>
+                    <tr>
+                      <td style="border: none;">YOLO-World</td>
+                      <td style="border: none;">51.00</td>
+                      <td style="border: none;">67.70</td>
+                      <td style="border: none;">66.1M</td>
+                    </tr>
+                    <tr>
+                      <td style="border: none;">RALF</td>
+                      <td style="border: none;">51.40</td>
+                      <td style="border: none;">68.07</td>
+                      <td style="border: none;">37.8M</td>
+                    </tr>
+                    <tr>
+                      <td style="border: none;"><strong>RD (ours)</strong></td>
+                      <td style="border: none;"><strong>53.36</strong></td>
+                      <td style="border: none;"><strong>70.55</strong></td>
+                      <td style="border: none;"><strong>0.2M</strong></td>
+                    </tr>
+                  </tbody>
+                </table>
+                
+              </div>
+            </div>
+            <!--/ Visual Effects. -->
+
+            <!-- Matting. -->
+            <div class="column">
+              <h2 class="title is-3">Different tasks</h2>
+              <div class="columns is-centered">
+                <div class="column content">
+                  <p>
+                    The Retriever Dictionary (RD) module enhances pixel-level features, and its potential benefits extend beyond detection tasks to include other vision tasks, such as segmentation and classification.
+                  </p>
+                  <table class="table is-fullwidth">
+                    <thead>
+                      <tr>
+                        <th>Task</th>
+                        <th>Metrics</th>
+                        <th></th>
+                        <th>w/ RD</th>
+                        <th>Improve</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr><td style="vertical-align: middle" rowspan="2">Classification</td><td style="border: none;">Top-1</td><td style="border: none;">74.86</td><td style="border: none;">75.70</td><td style="border: none;">↑ 1.12%</td></tr>
+                      <tr><td>Top-5</td><td>93.72</td><td>94.28</td><td>↑ 0.60%</td></tr>
+                      <tr><td style="vertical-align: middle" rowspan="2">Detection</td><td style="border: none;">mAP<sup>Box</sup></td><td style="border: none;">50.04</td><td style="border: none;">51.75</td><td style="border: none;">↑ 3.42%</td></tr>
+                      <tr><td>mAP<sup>Box</sup><sub>.5</sub></td><td>68.65</td><td>69.51</td><td>↑ 2.15%</td></tr>
+                      <tr><td style="border: none; vertical-align: middle" rowspan="2">Segmentation</td><td style="border: none;">mAP<sup>Seg</sup></td><td style="border: none;">40.53</td><td style="border: none;">41.56</td><td style="border: none;">↑ 2.54%</td></tr>
+                      <tr><td style="border: none;">mAP<sup>Seg</sup><sub>.5</sub></td><td style="border: none;">64.00</td><td style="border: none;">64.64</td><td style="border: none;">↑ 1.00%</td></tr>
+                    </tbody>
+                  </table>
+                  
+                </div>
+
+              </div>
+            </div>
+          </div>
+          <!--/ Matting. -->
+
+          <h2 class="title is-2 has-text-centered">🎨 Visualization</h2>
+          <div class="columns is-vcentered interpolation-panel">
+            <div class="column is-3 has-text-centered">
+              <img src="./static/images/exp_corr/main.png" class="interpolation-image"
+                alt="Interpolate start reference image." />
+            </div>
+            <div class="column is-5 has-text-centered">
+              <img src="./static/images/exp_corr/corr.png" class="interpolation-image"
+                alt="Interpolate start reference image." />
+            </div>
+
+            <div class="columns is-multiline">
+              <div class="column is-half has-text-centered">
+                <img src="./static/images/exp_corr/pos-1.png" class="interpolation-image" alt="1" />
+                <p class="is-size-6 has-text-grey">(c) Positive Sample</p>
+              </div>
+              <div class="column is-half has-text-centered">
+                <img src="./static/images/exp_corr/pos-2.png" class="interpolation-image" alt="2" />
+                <p class="is-size-6 has-text-grey">(d) Positive Sample</p>
+              </div>
+              <div class="column is-half has-text-centered">
+                <img src="./static/images/exp_corr/neg-1.png" class="interpolation-image" alt="3" />
+                <p class="is-size-6 has-text-grey">(e) Negative Sample</p>
+              </div>
+              <div class="column is-half has-text-centered">
+                <img src="./static/images/exp_corr/neg-2.png" class="interpolation-image" alt="4" />
+                <p class="is-size-6 has-text-grey">(f) Negative Sample</p>
+              </div>
+            </div>
+          </div>
+
+          <!--/ Re-rendering. -->
+        </div>
+      </div>
+      <!--/ Animation. -->
+
+
+      <section class="section" id="BibTeX">
+        <div class="container is-max-desktop content">
+          <h2 class="title">BibTeX</h2>
+          <pre>
+<code>@inproceedings{tsui2024yolord,
+    author={Tsui, Hao-Tang and Wang, Chien-Yao and Liao, Hong-Yuan Mark},
+    title={YOLO-RD: Introducing Relevant and Compact Explicit Knowledge to YOLO by Retriever-Dictionary},
+    booktitle={Proceedings of the International Conference on Learning Representations (ICLR)},
+    year={2025},
+}
+</code></pre>
+        </div>
+      </section>
+
+
+      <footer class="footer">
+        <div class="container">
+          <div class="content has-text-centered">
+            <a class="icon-link" href="./static/videos/nerfies_paper.pdf">
+              <i class="fas fa-file-pdf"></i>
+            </a>
+            <a class="icon-link" href="https://github.com/keunhong" class="external-link" disabled>
+              <i class="fab fa-github"></i>
+            </a>
+          </div>
+          <div class="columns is-centered">
+            <div class="column is-8">
+              <div class="content">
+                <p>
+                  This website is licensed under a <a rel="license"
+                    href="http://creativecommons.org/licenses/by-sa/4.0/">Creative
+                    Commons Attribution-ShareAlike 4.0 International License</a>.
+                </p>
+                <p>
+                  This means you are free to borrow the <a href="https://github.com/nerfies/nerfies.github.io">source
+                    code</a> of this website,
+                  we just ask that you link back to this page in the footer.
+                  Please remember to remove the analytics code included in the header of the website which
+                  you do not want on your website.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </footer>
+
+</body>
+
+</html>
