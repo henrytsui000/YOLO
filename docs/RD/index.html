@@ -253,11 +253,8 @@
         <div class="columns">
           <div class="column">
             <p>
-              PGI combines Reversible Branches and Deep Supervision to provide accurate gradients.
-              It introduces auxiliary branches that shorten paths or reuse inputs, improving information retention and
-              gradient precision.
-              Unlike traditional Deep Supervision, PGI works with small models and allows removable branches during
-              inference, enhancing speed without sacrificing performance.
+              We initialize the dictionary by mapping the dataset's images or captions into a high-dimensional space using YOLO's backbone (Vision Model), CLIP's vision encoder (Vision Language Model), or GPT (Large Language Model). 
+              Representative vectors—called atoms—are then selected via K-means or convex hull algorithms.
             </p>
           </div>
           <div class="column">
@@ -271,15 +268,14 @@
         <div class="columns">
           <div class="column">
             <p>
-              GELAN, the Generalized Efficient Layer Aggregation Network, reduces data loss by combining CSPNet and
-              ELAN.
-              CSPNet splits and merges features, while ELAN aggregates information across layers. We generalize ELAN
-              to use any network block, and here we use CSPNet.
-              Unlike ResNet, GELAN maintains data quality even beyond 100 layers, easing the model's learning effort.
+              Our module consists of a Retriever and a Dictionary. 
+              The Dictionary stores atoms, while the Retriever computes coefficients to combine them based on the input features. 
+              To reduce computation and memory costs, especially when the number of atoms is large, we adopt a two-step strategy inspired by grouped convolutions: 
+              a Coefficient Generator produces initial coefficients, and a Global Information Exchanger refines them by aggregating neighboring pixel information.
             </p>
           </div>
           <div class="column">
-            <img src="./static/images/RD_1.png" class="interpolation-image"
+            <img src="./static/images/RD_2.png" class="interpolation-image"
               alt="Interpolate start reference image." />
           </div>
 
@@ -288,15 +284,13 @@
         <div class="columns">
           <div class="column">
             <p>
-              GELAN, the Generalized Efficient Layer Aggregation Network, reduces data loss by combining CSPNet and
-              ELAN.
-              CSPNet splits and merges features, while ELAN aggregates information across layers. We generalize ELAN
-              to use any network block, and here we use CSPNet.
-              Unlike ResNet, GELAN maintains data quality even beyond 100 layers, easing the model's learning effort.
+              After training, we further compress the dictionary. 
+              We sample a smaller Retriever-Dictionary and align its output with the original one via contrastive learning in a teacher-student setup. 
+              This enables efficient inference with minimal performance loss.
             </p>
           </div>
           <div class="column">
-            <img src="./static/images/RD_1.png" class="interpolation-image"
+            <img src="./static/images/RD_3.png" class="interpolation-image"
               alt="Interpolate start reference image." />
           </div>
         </div>
@@ -516,7 +510,7 @@
             <a class="icon-link" href="./static/videos/nerfies_paper.pdf">
               <i class="fas fa-file-pdf"></i>
             </a>
-            <a class="icon-link" href="https://github.com/keunhong" class="external-link" disabled>
+            <a class="icon-link" href="https://github.com/henrytsui000" class="external-link" disabled>
               <i class="fab fa-github"></i>
             </a>
           </div>
